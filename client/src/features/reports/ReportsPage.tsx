@@ -14,8 +14,14 @@ const PRESETS: { value: DatePreset; label: string }[] = [
   { value: 'custom', label: 'Custom Range' },
 ];
 
+// OWNER-only reporting screen: lets the owner pick a date range (a named
+// preset, or a custom from/to pair) and see sales totals, breakdowns by
+// item/category, and a daily trend chart for that range.
 export function ReportsPage() {
+  // Which date-range preset is selected; drives what gets sent as the
+  // `preset` query param to every report endpoint.
   const [preset, setPreset] = useState<DatePreset>('today');
+  // Only used when preset === 'custom'.
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [summary, setSummary] = useState<SalesSummary | null>(null);
@@ -25,6 +31,10 @@ export function ReportsPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // Fetches the sales report and daily-sales report together for the
+  // current preset/from/to. For a custom range, waits until both `from`
+  // and `to` are filled in before calling the API (there's nothing useful
+  // to query otherwise).
   const load = async () => {
     if (preset === 'custom' && (!from || !to)) return;
     setLoading(true);
@@ -46,6 +56,10 @@ export function ReportsPage() {
     }
   };
 
+  // Re-fetches automatically whenever the preset changes (e.g. clicking
+  // "Last 7 Days"). For 'custom', the user instead triggers the fetch
+  // manually via the "Apply" button, which is why `from`/`to` are
+  // deliberately excluded from this effect's dependencies.
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps

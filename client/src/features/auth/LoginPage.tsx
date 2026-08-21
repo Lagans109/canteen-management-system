@@ -4,15 +4,24 @@ import { useAuth } from '../../hooks/useAuth';
 import { ApiError } from '../../lib/apiClient';
 import { IconAlert, IconBowl, IconEye, IconEyeOff } from '../../components/Icons';
 
+// The admin login form at /admin/login.
+// Flow: form submit -> useAuth().login() -> authService -> apiClient POST
+// /auth/login -> backend controller/service verifies the password and sets
+// the JWT auth cookie -> AuthContext stores the returned user -> this page
+// navigates to the dashboard.
 export function LoginPage() {
   const { user, loading, login } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  // Holds the message shown in the form when login fails (e.g. wrong
+  // credentials); cleared on each new submit attempt.
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  // If the session check already found a logged-in user, skip the login
+  // form entirely and go straight to the dashboard.
   if (!loading && user) {
     return <Navigate to="/admin/dashboard" replace />;
   }
@@ -25,6 +34,9 @@ export function LoginPage() {
       await login(email, password);
       navigate('/admin/dashboard');
     } catch (err) {
+      // ApiError carries the backend's actual message (e.g. "Invalid email
+      // or password"); anything else falls back to a generic message so no
+      // unexpected technical error ever reaches the user.
       setError(err instanceof ApiError ? err.message : 'Login failed');
     } finally {
       setSubmitting(false);

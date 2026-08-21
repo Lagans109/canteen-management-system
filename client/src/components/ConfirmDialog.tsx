@@ -8,6 +8,10 @@ interface ConfirmDialogProps {
   onCancel: () => void;
 }
 
+// A reusable "are you sure?" modal used before destructive actions (e.g.
+// deleting a menu item in MenuManagementPage). Clicking the dark overlay
+// cancels; clicking inside the dialog itself does not (via
+// `e.stopPropagation()`), so accidental outside clicks are the only way to dismiss it.
 export function ConfirmDialog({ title, message, confirmLabel = 'Confirm', onConfirm, onCancel }: ConfirmDialogProps) {
   return (
     <div className="modal-overlay" onClick={onCancel} role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title">

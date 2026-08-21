@@ -5,8 +5,15 @@ import { InventoryItem } from '../modules/inventory/inventoryItem.model';
 import { InventoryTransaction } from '../modules/inventory/inventoryTransaction.model';
 import { User } from '../modules/users/user.model';
 
+// Demo-data script (run via `npm run seed:inventory -w server`) that
+// generates a plausible starting stock level for every existing menu item,
+// so the Inventory and dashboard "low stock" screens have realistic data
+// to display without manually entering dozens of items.
 type Tier = 'HIGH' | 'MEDIUM' | 'LOW' | 'CRITICAL';
 
+// A repeating pattern of stock "tiers" assigned to menu items in order, so
+// the generated data has a mix of well-stocked and low-stock items rather
+// than everything looking identical.
 const TIER_PATTERN: Tier[] = ['HIGH', 'MEDIUM', 'HIGH', 'LOW', 'MEDIUM', 'HIGH', 'MEDIUM', 'CRITICAL', 'LOW', 'MEDIUM', 'HIGH'];
 
 const TIER_RANGES: Record<Tier, { qty: [number, number]; reorder: [number, number] }> = {
@@ -32,6 +39,9 @@ function randInt(rand: () => number, [min, max]: [number, number]): number {
   return Math.floor(rand() * (max - min + 1)) + min;
 }
 
+// Menu items that share the same base name (e.g. "Kurkure" at three
+// different prices) need distinct inventory item names, since
+// InventoryItem.name has a unique index.
 function buildInventoryName(menuItem: MenuItemDocument, duplicateNameCount: number): string {
   if (duplicateNameCount <= 1) return menuItem.name;
   if (menuItem.variantLabel) return `${menuItem.name} - ${menuItem.variantLabel}`;
@@ -41,6 +51,8 @@ function buildInventoryName(menuItem: MenuItemDocument, duplicateNameCount: numb
 async function main(): Promise<void> {
   await connectDB();
 
+  // An OWNER must already exist to be recorded as the creator of each
+  // opening-stock InventoryTransaction (createdBy is required).
   const owner = await User.findOne({ role: 'OWNER' }).sort({ createdAt: 1 });
   if (!owner) {
     console.error('No OWNER user found. Run `npm run seed:owner -w server` first.');
@@ -64,6 +76,8 @@ async function main(): Promise<void> {
 
     const tier = TIER_PATTERN[index % TIER_PATTERN.length] ?? 'MEDIUM';
     const range = TIER_RANGES[tier];
+    // Seeding the RNG per-item (rather than sharing one global RNG) keeps
+    // each item's generated numbers independent of how many items ran before it.
     const rand = seededRandom(index + 1);
     const quantity = randInt(rand, range.qty);
     const minStockThreshold = randInt(rand, range.reorder);
@@ -71,6 +85,8 @@ async function main(): Promise<void> {
 
     tierCounts[tier] += 1;
 
+    // Safe to re-run: an item already seeded from this menu item is
+    // refreshed in place rather than duplicated (matched via sourceMenuItem).
     const existing = await InventoryItem.findOne({ sourceMenuItem: menuItem._id });
     if (existing) {
       existing.name = name;
@@ -91,6 +107,9 @@ async function main(): Promise<void> {
         sourceMenuItem: menuItem._id,
       });
 
+      // Records the opening stock as a real PURCHASE transaction, so the
+      // item's audit trail starts from a documented event rather than
+      // appearing with stock from nowhere.
       await InventoryTransaction.create({
         inventoryItem: inventoryItem._id,
         type: 'PURCHASE',

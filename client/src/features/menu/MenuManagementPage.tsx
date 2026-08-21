@@ -7,6 +7,7 @@ import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { LoadingState, ErrorState, EmptyState } from '../../components/StateViews';
 import { IconPlus } from '../../components/Icons';
 
+
 interface ItemFormState {
   _id?: string;
   name: string;
@@ -32,16 +33,30 @@ const emptyItemForm: ItemFormState = {
   imageUrl: '',
 };
 
+// OWNER-only admin screen for managing categories and menu items. Every
+// mutation (create/update/delete) re-fetches the full lists afterward via
+// `load()` rather than patching local state manually, keeping this page's
+// data always in sync with the database.
 export function MenuManagementPage() {
   const toast = useToast();
+  // Both start as `null` (not []) so LoadingState can be shown until the
+  // very first fetch completes.
   const [categories, setCategories] = useState<Category[] | null>(null);
   const [items, setItems] = useState<MenuItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const [categoryName, setCategoryName] = useState('');
+  // Non-null while the add/edit item modal is open; holds the form's
+  // current field values (as strings, converted to numbers on submit).
   const [itemForm, setItemForm] = useState<ItemFormState | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
 
+
+  // Fetches categories and items together (in parallel) — called on mount
+  // and again after every create/update/delete so the table reflects the
+  // latest data. NOTE: getAllMenuItems() is called with no page/limit
+  // arguments here, so it relies on the backend's current behavior of
+  // always returning every menu item in one response.
   const load = async () => {
     try {
       const [cats, its] = await Promise.all([menuService.getCategories(), menuService.getAllMenuItems()]);
@@ -66,6 +81,9 @@ export function MenuManagementPage() {
       toast.show('Category added', 'success');
       load();
     } catch (err) {
+      // ApiError's message comes straight from the backend (e.g. Zod
+      // validation text or a duplicate-name error); anything else falls
+      // back to a generic message.
       toast.show(err instanceof ApiError ? err.message : 'Failed to add category', 'error');
     }
   };
@@ -90,6 +108,9 @@ export function MenuManagementPage() {
       imageUrl: item.imageUrl ?? '',
     });
 
+  // Submits the item form: creates a new item if there's no `_id`,
+  // otherwise updates the existing one. Numeric fields are parsed from
+  // their string form-state representation before being sent.
   const submitItemForm = async () => {
     if (!itemForm) return;
     const input = {
@@ -263,6 +284,27 @@ export function MenuManagementPage() {
                 ))}
               </tbody>
             </table>
+            {/* MUI Pagination 
+            {totalPages > 1 && (
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'center',
+                  marginTop: 24,
+                  marginBottom: 24,
+                }}
+              >
+                <Pagination
+                  count={totalPages}
+                  page={page}
+                  onChange={(_, value) => setPage(value)}
+                  color="primary"
+                  shape="rounded"
+                  showFirstButton
+                  showLastButton
+                />
+              </div>
+            )}*/}
           </div>
         )}
       </div>

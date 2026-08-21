@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+// Only `name` is required — a supplier can be registered with just a name
+// and details filled in later.
 export const createSupplierSchema = z.object({
   name: z.string().trim().min(1).max(100),
   contactPerson: z.string().trim().max(100).optional(),

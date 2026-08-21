@@ -1,3 +1,5 @@
+// The set of date-range shortcuts the Reports page and dashboard can
+// request instead of specifying exact dates.
 export type DatePreset = 'today' | 'yesterday' | 'last7days' | 'week' | 'month' | 'custom';
 
 export interface DateRange {
@@ -30,6 +32,11 @@ function startOfMonth(date: Date): Date {
   return d;
 }
 
+// Converts a named preset (plus the current time and, for "custom", the
+// client-supplied from/to) into a concrete {start, end} Date range that the
+// reports service's MongoDB queries can filter `createdAt` against.
+// `now` is passed in explicitly (rather than read internally) so this
+// function stays pure and easy to test with a fixed date.
 export function resolveDateRange(
   preset: DatePreset,
   now: Date,

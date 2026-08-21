@@ -8,6 +8,9 @@ import { LoadingState, ErrorState, EmptyState } from '../../components/StateView
 import { MiniBarChart } from '../../components/MiniBarChart';
 import { IconAlert, IconReceipt, IconSales, IconTrend } from '../../components/Icons';
 
+// Data only OWNER users see: today's summary, top items, low-stock items,
+// and the last-7-days trend. Grouped in one object so the page can tell
+// "not loaded yet" (null) apart from "loaded" in a single check.
 interface OwnerData {
   summary: SalesSummary;
   topItems: ItemSales[];
@@ -15,15 +18,24 @@ interface OwnerData {
   trend: DailySales[];
 }
 
+// The landing page after login for both OWNER and CASHIER — shows recent
+// sales to everyone, plus extra summary/reports widgets for OWNER only.
 export function DashboardPage() {
   const { user } = useAuth();
   const [recentSales, setRecentSales] = useState<Sale[] | null>(null);
   const [ownerData, setOwnerData] = useState<OwnerData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Runs on mount and whenever the user's role changes (e.g. right after
+  // login resolves). Always fetches the 5 most recent sales; only fetches
+  // the owner-only report/inventory data if the current user is OWNER —
+  // this avoids CASHIER accounts triggering requests to OWNER-only
+  // endpoints that would just fail with a 403.
   useEffect(() => {
     const load = async () => {
       try {
+        // Requests only the first 5 sales (no page controls) — enough for
+        // a "recent activity" preview, not a full paginated history.
         const salesRes = await saleService.listSales({ limit: 5 });
         setRecentSales(salesRes.sales);
 

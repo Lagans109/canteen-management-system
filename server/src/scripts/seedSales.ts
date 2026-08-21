@@ -6,6 +6,13 @@ import { User } from '../modules/users/user.model';
 import { Sale } from '../modules/sales/sale.model';
 import { calculateLineItems, round2, type MenuItemSnapshot } from '../modules/sales/sale.service';
 
+// Generates several months of realistic-looking demo sales history (run
+// via `npm run seed:sales -w server`), so Reports/Dashboard charts have
+// enough data to be meaningful instead of showing empty/flat graphs.
+// Inserted directly via the raw MongoDB collection (see `salesCollection`
+// below) rather than one-by-one through Sale.create(), since generating
+// months of data one Mongoose document at a time would be far slower.
+
 interface RawSaleLineItem {
   menuItem: mongoose.Types.ObjectId;
   name: string;
@@ -28,6 +35,9 @@ const SEEDED_CATEGORY_NAMES = ['Chocolates', 'Cold Drinks', 'Biscuits', 'Chips &
 const HISTORY_START = new Date('2026-02-09T00:00:00.000');
 const HISTORY_END = new Date('2026-08-09T23:59:59.999');
 
+// Identifies this specific seed run (by its date range) so re-running the
+// script doesn't keep appending duplicate history — see the SeedState
+// model and the "already seeded" check in main() below.
 const SEED_KEY = `demo-sales_${HISTORY_START.toISOString().slice(0, 10)}_${HISTORY_END.toISOString().slice(0, 10)}`;
 
 /** Month multipliers (0 = January) reflecting the requested seasonal pattern. */
@@ -41,6 +51,8 @@ const MONTH_MULTIPLIER: Record<number, number> = {
   7: 0.95, // August - partial month
 };
 
+// Sales aren't spread evenly through the day — this models a lunchtime
+// rush and lighter morning/evening traffic when picking a random sale time.
 const TIME_BUCKETS: { startHour: number; endHour: number; weight: number }[] = [
   { startHour: 8, endHour: 10, weight: 0.15 }, // morning
   { startHour: 11, endHour: 14, weight: 0.45 }, // lunch
@@ -48,6 +60,8 @@ const TIME_BUCKETS: { startHour: number; endHour: number; weight: number }[] = [
   { startHour: 17, endHour: 19, weight: 0.15 }, // evening
 ];
 
+// A tiny dedicated collection used only to remember "this date range has
+// already been seeded", independent of the actual Sale/business models.
 const seedStateSchema = new Schema(
   { key: { type: String, required: true, unique: true }, seededAt: Date, count: Number, dateFrom: Date, dateTo: Date },
   { collection: 'seed_state' },
@@ -60,6 +74,10 @@ function randInt(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
+// Picks one entry from a weighted list — higher `weight` values are
+// proportionally more likely to be chosen. Used throughout this script to
+// bias random choices (e.g. cheaper items sell more often, lunch hour has
+// more sales) instead of picking uniformly at random.
 function pickWeighted<T>(entries: { value: T; weight: number }[]): T {
   const total = entries.reduce((sum, e) => sum + e.weight, 0);
   let roll = Math.random() * total;
@@ -70,6 +88,8 @@ function pickWeighted<T>(entries: { value: T; weight: number }[]): T {
   return entries[entries.length - 1]!.value;
 }
 
+// Cheaper items and certain categories (bakery, biscuits) are weighted to
+// sell more often, approximating real canteen buying patterns.
 function itemWeight(price: number, categoryName: string): number {
   let weight = price <= 10 ? 6 : price <= 20 ? 4 : price <= 30 ? 3 : 1.5;
   if (categoryName === 'Bakery Items') weight *= 1.5;
@@ -79,6 +99,9 @@ function itemWeight(price: number, categoryName: string): number {
   return weight;
 }
 
+// Decides how many sales happen on a given day: weekends are quieter on
+// average (with an occasional busy event day), and each month's overall
+// level is scaled by MONTH_MULTIPLIER.
 function dailySalesCount(date: Date, monthMultiplier: number): number {
   const day = date.getDay();
   const isWeekend = day === 0 || day === 6;
@@ -113,6 +136,9 @@ interface WeightedItem {
   weight: number;
 }
 
+// Picks `count` distinct items from the weighted pool for one sale (so the
+// same item never appears twice as separate lines in a single sale),
+// removing each chosen item from the remaining pool before the next pick.
 function pickDistinctItems(pool: WeightedItem[], count: number): MenuItemSnapshot[] {
   const chosen: MenuItemSnapshot[] = [];
   const remaining = [...pool];
@@ -131,6 +157,9 @@ function pickDistinctItems(pool: WeightedItem[], count: number): MenuItemSnapsho
 async function main(): Promise<void> {
   await connectDB();
 
+  // Guards against accidentally generating duplicate history if the script
+  // is run more than once for the same date range. Set SEED_SALES_RESET=true
+  // to intentionally wipe and regenerate it.
   const force = process.env.SEED_SALES_RESET === 'true';
   const existingMarker = await SeedState.findOne({ key: SEED_KEY });
 
@@ -166,6 +195,9 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  // Builds the same {id, name, price} catalog shape that the real
+  // createSale() flow uses, so generated sales are priced with the exact
+  // same calculateLineItems()/round2() logic as a real sale.
   const catalog = new Map<string, MenuItemSnapshot>();
   const weightedPool: WeightedItem[] = [];
   for (const item of menuItems) {
@@ -175,6 +207,7 @@ async function main(): Promise<void> {
     weightedPool.push({ snapshot, weight: itemWeight(item.price, categoryName) });
   }
 
+  // Most sales are for 1-2 items with quantity 1 — occasional larger baskets.
   const itemCountDistribution = [
     { value: 1, weight: 0.35 },
     { value: 2, weight: 0.35 },
@@ -187,6 +220,9 @@ async function main(): Promise<void> {
     { value: 3, weight: 0.1 },
   ];
 
+  // Inserts are buffered and flushed in batches rather than one insert per
+  // sale, since this script can generate tens of thousands of documents
+  // across ~6 months of history.
   const BATCH_SIZE = 2000;
   const salesCollection = mongoose.connection.collection<RawSaleDoc>('sales');
   let batch: RawSaleDoc[] = [];
@@ -202,6 +238,8 @@ async function main(): Promise<void> {
     batch = [];
   };
 
+  // Walks one calendar day at a time across the whole history window,
+  // generating a random number of sales (with random items/times) for each day.
   for (
     let day = new Date(HISTORY_START);
     day.getTime() <= HISTORY_END.getTime();
@@ -256,6 +294,8 @@ async function main(): Promise<void> {
 
   await flush();
 
+  // Records that this date range has now been seeded, so a second run
+  // without SEED_SALES_RESET=true will skip instead of duplicating data.
   await SeedState.create({
     key: SEED_KEY,
     seededAt: new Date(),

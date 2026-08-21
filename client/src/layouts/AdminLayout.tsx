@@ -12,6 +12,9 @@ import {
 } from '../components/Icons';
 import type { ComponentType, SVGProps } from 'react';
 
+// The sidebar navigation for the admin area. `ownerOnly` items are hidden
+// entirely for CASHIER users (this mirrors, but does not replace, the
+// server-side role checks and the nested ProtectedRoute roles in App.tsx).
 const NAV_ITEMS: { to: string; label: string; icon: ComponentType<SVGProps<SVGSVGElement>>; ownerOnly?: boolean }[] = [
   { to: '/admin/dashboard', label: 'Dashboard', icon: IconDashboard },
   { to: '/admin/sales', label: 'Sales', icon: IconSales },
@@ -21,6 +24,10 @@ const NAV_ITEMS: { to: string; label: string; icon: ComponentType<SVGProps<SVGSV
   { to: '/admin/reports', label: 'Reports', icon: IconReports, ownerOnly: true },
 ];
 
+// Shell layout rendered for every /admin/* route (see App.tsx): a sidebar
+// with navigation + a topbar showing the logged-in user, wrapping whatever
+// page is rendered via <Outlet /> (React Router's placeholder for the
+// matched child route).
 export function AdminLayout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -30,6 +37,7 @@ export function AdminLayout() {
     navigate('/admin/login');
   };
 
+  // Cashiers only see Dashboard/Sales links; owners see everything.
   const visibleItems = NAV_ITEMS.filter((item) => !item.ownerOnly || user?.role === 'OWNER');
   const initials = user?.name
     ? user.name

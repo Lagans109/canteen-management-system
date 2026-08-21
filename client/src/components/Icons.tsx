@@ -2,6 +2,9 @@ import type { ReactNode, SVGProps } from 'react';
 
 type IconProps = SVGProps<SVGSVGElement>;
 
+// Shared SVG wrapper applying consistent default sizing/stroke styling to
+// every icon below, while still allowing callers to override any prop
+// (e.g. width/height/style) via `{...props}`.
 function base(props: IconProps, children: ReactNode) {
   return (
     <svg
@@ -21,6 +24,9 @@ function base(props: IconProps, children: ReactNode) {
   );
 }
 
+// Simple line-icon set used throughout the admin UI (nav links, buttons,
+// state views). Each is a small function component wrapping `base()` with
+// its own SVG path data — no icon library dependency.
 export const IconDashboard = (p: IconProps) =>
   base(p, <><rect x="3" y="3" width="7" height="9" rx="1.5" /><rect x="14" y="3" width="7" height="5" rx="1.5" /><rect x="14" y="12" width="7" height="9" rx="1.5" /><rect x="3" y="16" width="7" height="5" rx="1.5" /></>);
 

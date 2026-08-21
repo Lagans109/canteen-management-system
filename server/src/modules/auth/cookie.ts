@@ -19,6 +19,18 @@ function parseDurationToMs(duration: string): number | null {
   return value * (unitMs[unit] ?? 1000);
 }
 
+// Builds the cookie options used both when setting and clearing the auth
+// cookie (they must match exactly, or the browser won't clear it on logout).
+//
+// - httpOnly: true      → JavaScript in the browser can never read this
+//                          cookie, which protects the JWT from theft via XSS.
+// - secure               → only sent over HTTPS; forced on in production, or
+//                          whenever sameSite is 'none' (browsers require this combination).
+// - sameSite             → controls cross-site sending; 'lax' is fine when the
+//                          frontend and API share a site, 'none' is needed for
+//                          separate origins (and then requires secure/HTTPS).
+// - maxAge               → derived from JWT_EXPIRES_IN so the cookie expires
+//                          around the same time the JWT inside it does.
 export function cookieOptions(): CookieOptions {
   const maxAge = parseDurationToMs(env.JWT_EXPIRES_IN) ?? DEFAULT_MAX_AGE_MS;
   const sameSite = env.COOKIE_SAME_SITE;

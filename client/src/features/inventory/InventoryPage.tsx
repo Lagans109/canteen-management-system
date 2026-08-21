@@ -1,13 +1,17 @@
-import { useEffect, useState } from 'react';
+import Pagination from '@mui/material/Pagination';
+import { useCallback, useEffect, useState } from 'react';
 import * as inventoryService from '../../services/inventoryService';
 import * as supplierService from '../../services/supplierService';
-import type { InventoryItem, InventoryTransaction, Supplier, TransactionType } from '../../types';
+import type {
+  InventoryItem,
+  InventoryTransaction,
+  Supplier,
+  TransactionType,
+} from '../../types';
 import { useToast } from '../../components/Toast';
 import { ApiError } from '../../lib/apiClient';
 import { LoadingState, ErrorState, EmptyState } from '../../components/StateViews';
-import { IconPlus } from '../../components/Icons';
-
-interface ItemFormState {
+import { IconPlus } from '../../components/Icons';interface ItemFormState {
   name: string;
   unit: string;
   quantity: string;
@@ -27,8 +31,15 @@ const emptyItemForm: ItemFormState = {
 
 const TRANSACTION_TYPES: TransactionType[] = ['PURCHASE', 'SALE', 'ADJUSTMENT', 'WASTE', 'RETURN'];
 
+// OWNER-only stock management screen. Item quantity is never edited
+// directly on this page — every change goes through the "Adjust Stock"
+// transaction flow below, so the backend can keep an audit trail (see
+// InventoryTransaction / recordTransaction on the backend).
 export function InventoryPage() {
   const toast = useToast();
+  // Both fetched together on mount (see `load` below); items and
+  // suppliers are needed together because the item table shows each
+  // item's linked supplier name and the "Add Item" form offers a supplier dropdown.
   const [items, setItems] = useState<InventoryItem[] | null>(null);
   const [suppliers, setSuppliers] = useState<Supplier[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -36,30 +47,52 @@ export function InventoryPage() {
   const [showItemForm, setShowItemForm] = useState(false);
   const [itemForm, setItemForm] = useState<ItemFormState>(emptyItemForm);
 
+  // State for the "Adjust Stock" modal: which item is being adjusted, and
+  // the transaction details being entered.
   const [txnTarget, setTxnTarget] = useState<InventoryItem | null>(null);
   const [txnType, setTxnType] = useState<TransactionType>('PURCHASE');
   const [txnAmount, setTxnAmount] = useState('');
   const [txnReason, setTxnReason] = useState('');
 
+  // State for the "History" modal: which item's transaction log is open, and its data once loaded.
   const [historyTarget, setHistoryTarget] = useState<InventoryItem | null>(null);
   const [history, setHistory] = useState<InventoryTransaction[] | null>(null);
 
-  const load = async () => {
-    try {
-      const [itemsRes, suppliersRes] = await Promise.all([
-        inventoryService.listInventoryItems(),
-        supplierService.listSuppliers(),
-      ]);
-      setItems(itemsRes.items);
-      setSuppliers(suppliersRes.suppliers);
-    } catch {
-      setError('Unable to load inventory data.');
-    }
-  };
+   // Loading state
+  const [loading,setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [rowsPerPage] = useState(10);
+  const [totalItems, setTotalItems] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
 
+  const load = useCallback(async () => {
+  try {
+    setLoading(true);
+    setError(null);
+
+    const [inventoryRes, suppliersRes] = await Promise.all([
+      inventoryService.listInventoryItems(page, rowsPerPage),
+      supplierService.listSuppliers(),
+    ]);
+
+    setItems(inventoryRes.items);
+    setTotalItems(inventoryRes.total);
+    setTotalPages(inventoryRes.totalPages);
+
+    setSuppliers(suppliersRes.suppliers);
+  } catch (err) {
+    setError(
+      err instanceof ApiError
+        ? err.message
+        : 'Unable to load inventory data.',
+    );
+  } finally {
+    setLoading(false);
+  }
+}, [page, rowsPerPage]);
   useEffect(() => {
     load();
-  }, []);
+  }, [load]);
 
   const submitItemForm = async () => {
     try {
@@ -88,6 +121,12 @@ export function InventoryPage() {
     setTxnReason('');
   };
 
+  // Submits a stock transaction. SALE/WASTE always reduce stock
+  // (quantityChange is forced negative here), PURCHASE/RETURN always
+  // increase it (forced positive), while ADJUSTMENT is a manual
+  // correction where the entered amount's sign is used as-is (it can go
+  // either direction). The backend still re-validates the resulting
+  // quantity never goes negative (see applyQuantityChange).
   const submitTxn = async () => {
     if (!txnTarget) return;
     const amount = Number(txnAmount);
@@ -116,6 +155,9 @@ export function InventoryPage() {
   if (error) return <ErrorState label={error} />;
   if (!items || !suppliers) return <LoadingState label="Loading inventory..." />;
 
+  // Low-stock count is recalculated from the loaded items on every render
+  // (cheap, no need for useMemo) — must match the same rule the backend
+  // uses for listLowStockItems (quantity <= minStockThreshold).
   const lowStockCount = items.filter((i) => i.quantity <= i.minStockThreshold).length;
 
   return (
@@ -124,7 +166,7 @@ export function InventoryPage() {
         <div>
           <h1>Inventory</h1>
           <p>
-            {items.length} item{items.length === 1 ? '' : 's'} tracked
+            {totalItems} item{totalItems === 1 ? '' : 's'} tracked
             {lowStockCount > 0 && (
               <>
                 {' '}
@@ -142,7 +184,7 @@ export function InventoryPage() {
       <div className="card">
         {items.length === 0 ? (
           <EmptyState label="No inventory items yet." />
-        ) : (
+        ) :(
           <div className="table-wrap">
             <table>
               <thead>
@@ -199,6 +241,28 @@ export function InventoryPage() {
           </div>
         )}
       </div>
+
+      {/* MUI Pagination */}
+{totalPages > 1 && (
+  <div
+    style={{
+      display: 'flex',
+      justifyContent: 'center',
+      marginTop: 24,
+      marginBottom: 24,
+    }}
+  >
+    <Pagination
+      count={totalPages}
+      page={page}
+      onChange={(_, value) => setPage(value)}
+      color="primary"
+      shape="rounded"
+      showFirstButton
+      showLastButton
+    />
+  </div>
+)}
 
       {showItemForm && (
         <div className="modal-overlay" onClick={() => setShowItemForm(false)}>

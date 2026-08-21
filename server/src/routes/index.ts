@@ -6,6 +6,10 @@ import { inventoryRouter } from '../modules/inventory/inventory.routes';
 import { supplierRouter } from '../modules/suppliers/supplier.routes';
 import { reportsRouter } from '../modules/reports/reports.routes';
 
+// Combines every feature module's router into a single router that gets
+// mounted at /api in app.ts. This is the top-level map of the whole API
+// surface: /api/auth/*, /api/menu/*, /api/sales/*, /api/inventory/*,
+// /api/suppliers/*, /api/reports/*.
 export const apiRouter = Router();
 
 apiRouter.use('/auth', authRouter);

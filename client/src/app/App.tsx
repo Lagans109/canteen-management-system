@@ -13,19 +13,28 @@ import { InventoryPage } from '../features/inventory/InventoryPage';
 import { SuppliersPage } from '../features/suppliers/SuppliersPage';
 import { ReportsPage } from '../features/reports/ReportsPage';
 
+// The top-level route map for the whole app, using React Router v7
+// (imported from the `react-router` package). AuthProvider/ToastProvider
+// wrap every route so authentication state and toast notifications are
+// available anywhere in the tree via useAuth()/useToast().
 export function App() {
   return (
     <AuthProvider>
       <ToastProvider>
         <BrowserRouter>
           <Routes>
+            {/* Public, unauthenticated routes — the student-facing menu. Both
+                paths render the same page. */}
             <Route element={<PublicLayout />}>
               <Route path="/" element={<PublicMenuPage />} />
               <Route path="/menu" element={<PublicMenuPage />} />
             </Route>
 
+            {/* Login page is intentionally outside ProtectedRoute — it must be reachable while logged out. */}
             <Route path="/admin/login" element={<LoginPage />} />
 
+            {/* Everything under /admin requires a logged-in session (any
+                role). ProtectedRoute redirects to /admin/login otherwise. */}
             <Route
               path="/admin"
               element={
@@ -34,8 +43,13 @@ export function App() {
                 </ProtectedRoute>
               }
             >
+              {/* Dashboard and Sales are usable by both OWNER and CASHIER. */}
               <Route path="dashboard" element={<DashboardPage />} />
               <Route path="sales" element={<SalesPage />} />
+
+              {/* Menu/Inventory/Suppliers/Reports are OWNER-only — each gets
+                  its own nested ProtectedRoute with an explicit `roles` list,
+                  on top of the outer (login-only) ProtectedRoute above. */}
               <Route
                 path="menu"
                 element={

@@ -2,6 +2,10 @@ import mongoose from 'mongoose';
 import { connectDB } from '../config/db';
 import { Supplier } from '../modules/suppliers/supplier.model';
 
+// Demo/reference supplier data (run via `npm run seed:suppliers -w server`).
+// These are real, publicly-listed businesses used only as realistic sample
+// data — the disclaimer below is stored on each record to make clear no
+// actual business relationship with the canteen is implied.
 const DEMO_DISCLAIMER =
   'Publicly listed business used for demo/reference supplier data. Relationship with canteen is fictional.';
 
@@ -92,6 +96,8 @@ async function main(): Promise<void> {
     };
     if (seed.phone) update.phone = seed.phone;
 
+    // `upsert: true` makes this safe to re-run — existing suppliers (matched
+    // by name) are refreshed in place instead of duplicated.
     const existing = await Supplier.exists({ name: seed.name });
     await Supplier.findOneAndUpdate({ name: seed.name }, { $set: update }, { upsert: true, setDefaultsOnInsert: true });
 

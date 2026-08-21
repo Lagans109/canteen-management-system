@@ -1,6 +1,8 @@
 import { apiRequest } from '../lib/apiClient';
 import type { Supplier } from '../types';
 
+// GET /api/suppliers — full supplier list; not paginated on the backend, so
+// there's nothing to paginate here either.
 export function listSuppliers(): Promise<{ suppliers: Supplier[] }> {
   return apiRequest('/suppliers');
 }

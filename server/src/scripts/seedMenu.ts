@@ -14,6 +14,9 @@ interface SeedCategory {
   items: SeedItem[];
 }
 
+// Demo/starter menu data (run via `npm run seed:menu -w server`) so a fresh
+// database has something to browse/sell immediately, without manually
+// creating every category and item through the admin UI first.
 const SEED_CATEGORIES: SeedCategory[] = [
   {
     name: 'Chocolates',
@@ -94,6 +97,8 @@ async function main(): Promise<void> {
     const seedCategory = SEED_CATEGORIES[categoryIndex];
     if (!seedCategory) continue;
 
+    // `upsert: true` makes this script safe to re-run: existing categories
+    // are updated in place (e.g. if displayOrder changes) instead of duplicated.
     const category = await Category.findOneAndUpdate(
       { name: seedCategory.name },
       { $set: { displayOrder: categoryIndex, active: true } },
@@ -105,6 +110,10 @@ async function main(): Promise<void> {
       const seedItem = seedCategory.items[itemIndex];
       if (!seedItem) continue;
 
+      // Some items share a name but differ by size/price (e.g. two "Kurkure"
+      // entries at different prices), so the upsert filter includes price
+      // and variantLabel too — otherwise the second variant would just
+      // overwrite the first instead of being created separately.
       const filter: Record<string, unknown> = {
         name: seedItem.name,
         category: category._id,

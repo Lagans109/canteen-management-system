@@ -3,11 +3,17 @@ interface MiniChartPoint {
   value: number;
 }
 
+// A small, dependency-free bar chart (no charting library) used by the
+// Dashboard and Reports pages to visualize sales trends. Bar heights are
+// scaled relative to the largest value in the dataset so the tallest bar
+// always fills the chart, and a minimum 2% height keeps zero-value bars
+// visibly present rather than invisible.
 export function MiniBarChart({ data, formatValue }: { data: MiniChartPoint[]; formatValue?: (v: number) => string }) {
   if (data.length === 0) {
     return <p style={{ color: 'var(--color-muted)' }}>No data for this range.</p>;
   }
 
+  // Math.max(..., 1) avoids a divide-by-zero if every value in the range is 0.
   const max = Math.max(...data.map((d) => d.value), 1);
   const format = formatValue ?? ((v: number) => String(v));
 

@@ -15,15 +15,25 @@ interface DraftLine {
   quantity: number;
 }
 
+// The point-of-sale screen used by both OWNER and CASHIER to record a
+// sale: pick items a customer bought at the counter, adjust quantities,
+// then submit. There is no order/payment/receipt concept here — submitting
+// just creates one Sale record with a price snapshot of each line.
 export function SalesPage() {
   const toast = useToast();
   const [menuItems, setMenuItems] = useState<PublicMenuItem[] | null>(null);
   const [search, setSearch] = useState('');
+  // The in-progress sale being built up by tapping items — not yet
+  // persisted to the backend until "Record Sale" is pressed.
   const [draft, setDraft] = useState<DraftLine[]>([]);
   const [sales, setSales] = useState<Sale[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  // Refetches the most recent sales for the "Recent Sales" table. Requests
+  // a fixed `limit: 20` (first page only) — no page state/controls exist
+  // here, even though the backend's GET /api/sales supports full
+  // page/limit pagination (see saleService.ts and sale.service.ts's listSales).
   const loadSales = () => {
     saleService
       .listSales({ limit: 20 })
@@ -39,6 +49,8 @@ export function SalesPage() {
     loadSales();
   }, []);
 
+  // Client-side search over the already-loaded menu items, so picking
+  // items to sell stays instant with no extra network round-trip per keystroke.
   const filteredMenuItems = useMemo(() => {
     if (!menuItems) return [];
     const query = search.trim().toLowerCase();
@@ -46,6 +58,8 @@ export function SalesPage() {
     return menuItems.filter((item) => item.name.toLowerCase().includes(query));
   }, [menuItems, search]);
 
+  // Tapping an item either adds it as a new draft line or bumps an
+  // existing line's quantity by one.
   const addOne = (item: PublicMenuItem) => {
     setDraft((prev) => {
       const existing = prev.find((l) => l.menuItem === item.id);
@@ -58,6 +72,8 @@ export function SalesPage() {
     });
   };
 
+  // Adjusts a line's quantity by +/-1; a line that reaches 0 is dropped
+  // from the draft automatically.
   const changeQuantity = (menuItem: string, delta: number) => {
     setDraft((prev) =>
       prev
@@ -70,9 +86,15 @@ export function SalesPage() {
     setDraft((prev) => prev.filter((l) => l.menuItem !== menuItem));
   };
 
+  // These are derived directly during render (not stored in state) since
+  // they're cheap to compute and always need to reflect the current draft exactly.
   const total = draft.reduce((sum, l) => sum + l.unitPrice * l.quantity, 0);
   const itemCount = draft.reduce((sum, l) => sum + l.quantity, 0);
 
+  // Sends the draft to the backend as a new sale. The backend re-validates
+  // prices/availability itself (see createSale in sale.service.ts) rather
+  // than trusting the unitPrice stored in the draft, so a stale/edited
+  // price on this page can never affect what's actually recorded.
   const submitSale = async () => {
     if (draft.length === 0) return;
     setSubmitting(true);

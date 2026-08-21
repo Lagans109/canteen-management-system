@@ -19,10 +19,16 @@ export interface DailySales {
   numberOfSales: number;
 }
 
+// Shared MongoDB match condition used by every report query below: only
+// consider sales whose createdAt falls within the resolved date range.
 function dateMatch(range: DateRange): Record<string, unknown> {
   return { createdAt: { $gte: range.start, $lte: range.end } };
 }
 
+// Aggregates high-level totals (revenue, number of transactions, total
+// items sold) for the given date range. `$project` first computes each
+// sale's item count, then `$group` (with `_id: null`, meaning "one group
+// for everything") sums across all matching sales in a single pass.
 export async function getSalesSummary(range: DateRange): Promise<SalesSummary> {
   const result = await Sale.aggregate<{ totalSales: number; numberOfSales: number; totalItemsSold: number }>([
     { $match: dateMatch(range) },
@@ -42,6 +48,8 @@ export async function getSalesSummary(range: DateRange): Promise<SalesSummary> {
     },
   ]);
 
+  // If there were no sales in the range, `result` is empty — default to zeros
+  // instead of returning undefined values.
   const summary = result[0];
   return {
     totalSales: summary?.totalSales ?? 0,
@@ -50,6 +58,9 @@ export async function getSalesSummary(range: DateRange): Promise<SalesSummary> {
   };
 }
 
+// Breaks total sales down by item name, sorted highest revenue first.
+// `$unwind` turns each sale's `items` array into one pipeline document per
+// line item, so quantities/amounts can be grouped by item name across all sales.
 export async function getSalesByItem(range: DateRange): Promise<ItemSales[]> {
   return Sale.aggregate<ItemSales>([
     { $match: dateMatch(range) },
@@ -66,6 +77,9 @@ export async function getSalesByItem(range: DateRange): Promise<ItemSales[]> {
   ]);
 }
 
+// Reuses getSalesByItem's per-item totals, then re-sorts by quantity sold
+// (rather than revenue) and trims to the requested count — this is what
+// powers the dashboard's "Top Selling Items" panel.
 export async function getTopSellingItems(range: DateRange, limit: number): Promise<ItemSales[]> {
   const items = await getSalesByItem(range);
   return items.sort((a, b) => b.quantity - a.quantity).slice(0, limit);
@@ -77,6 +91,12 @@ export interface CategorySales {
   totalAmount: number;
 }
 
+// Breaks total sales down by category. Since a Sale's line items only
+// store the menu item's id (not its category), this pipeline has to
+// `$lookup` (MongoDB's equivalent of a SQL join) from items → MenuItem →
+// Category to recover the category name for each line, then group by it.
+// Items whose category can't be resolved (e.g. a deleted category) fall
+// back to "Uncategorized" rather than being silently dropped.
 export async function getSalesByCategory(range: DateRange): Promise<CategorySales[]> {
   return Sale.aggregate<CategorySales>([
     { $match: dateMatch(range) },
@@ -114,6 +134,8 @@ export async function getSalesByCategory(range: DateRange): Promise<CategorySale
   ]);
 }
 
+// Groups sales by calendar day (in "YYYY-MM-DD" form) within the range —
+// used to draw the daily sales trend chart.
 export async function getDailySales(range: DateRange): Promise<DailySales[]> {
   return Sale.aggregate<DailySales>([
     { $match: dateMatch(range) },

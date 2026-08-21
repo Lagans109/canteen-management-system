@@ -27,10 +27,14 @@ const emptyForm: FormState = {
   active: true,
 };
 
+// OWNER-only vendor management screen — a straightforward CRUD page (no
+// search/filter/pagination, since supplier lists are expected to stay
+// small; see supplierService.ts/supplier.controller.ts for the backend side).
 export function SuppliersPage() {
   const toast = useToast();
   const [suppliers, setSuppliers] = useState<Supplier[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Non-null while the add/edit modal is open, holding the form's field values.
   const [form, setForm] = useState<FormState | null>(null);
 
   const load = () => {
@@ -55,6 +59,9 @@ export function SuppliersPage() {
       active: s.active,
     });
 
+  // Creates a new supplier if the form has no `_id`, otherwise updates the
+  // existing one. Optional text fields are sent as `undefined` (not empty
+  // strings) when blank, so they don't overwrite existing values with empty text.
   const submit = async () => {
     if (!form) return;
     const input = {

@@ -3,6 +3,13 @@ import { MenuItem, type MenuItemDocument } from './menuItem.model';
 import { AppError } from '../../utils/AppError';
 import type { PublicMenuItem } from './menu.types';
 
+// Builds the list of items meant for the public, unauthenticated menu page.
+// Filters out items that are `active: false` (removed from the menu
+// entirely) or `available: false` (temporarily out of stock), and also
+// drops items whose category itself has been deactivated — a category can
+// be turned off without having to touch every item inside it.
+// `.lean()` returns plain JS objects instead of Mongoose documents, which is
+// faster since this data is read-only and going straight into a JSON response.
 export async function listPublicMenuItems(): Promise<PublicMenuItem[]> {
   const items = await MenuItem.find({ active: true, available: true })
     .populate<{ category: CategoryDocument }>('category')
@@ -25,15 +32,20 @@ export async function listPublicMenuItems(): Promise<PublicMenuItem[]> {
       return publicItem;
     });
 }
-
+// All categories, active or not — used by the admin screen, which needs to
+// show and let owners re-enable inactive categories.
 export function listCategories(): Promise<CategoryDocument[]> {
   return Category.find().sort({ displayOrder: 1, name: 1 });
 }
 
+// All menu items, active or not, with their category populated — used by
+// the admin Menu Management screen. Unlike listPublicMenuItems, nothing is filtered out here.
 export function listAllMenuItems(): Promise<MenuItemDocument[]> {
   return MenuItem.find().populate('category').sort({ displayOrder: 1, name: 1 });
 }
 
+// Guards menu item create/update against referencing a category id that
+// doesn't exist in the database (e.g. a stale id from the client).
 export async function assertCategoryExists(categoryId: string): Promise<void> {
   const exists = await Category.exists({ _id: categoryId });
   if (!exists) {
@@ -41,6 +53,9 @@ export async function assertCategoryExists(categoryId: string): Promise<void> {
   }
 }
 
+// Business rule: a category cannot be deleted while any menu item still
+// references it — otherwise those items would be left pointing at a
+// nonexistent category. The owner must first move/delete those items.
 export async function deleteCategoryOrThrow(categoryId: string): Promise<void> {
   const inUse = await MenuItem.exists({ category: categoryId });
   if (inUse) {

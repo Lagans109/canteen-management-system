@@ -1,5 +1,9 @@
 import { z } from 'zod';
 
+// Shared shape for report date filtering: either a named preset (today,
+// yesterday, last7days, week, month) or a fully custom range. The
+// `.refine()` enforces that choosing "custom" also requires both `from`
+// and `to` — otherwise there'd be nothing to resolve a range from.
 export const reportQuerySchema = z
   .object({
     preset: z.enum(['today', 'yesterday', 'last7days', 'week', 'month', 'custom']).default('today'),
@@ -12,6 +16,8 @@ export const reportQuerySchema = z
 
 export type ReportQuery = z.infer<typeof reportQuerySchema>;
 
+// Same as reportQuerySchema, plus a `limit` on how many top-selling items
+// to return (default 10, capped at 50 to keep the response small).
 export const topItemsQuerySchema = z
   .object({
     preset: z.enum(['today', 'yesterday', 'last7days', 'week', 'month', 'custom']).default('today'),

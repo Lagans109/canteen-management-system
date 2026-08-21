@@ -4,10 +4,17 @@ import { verifyToken, type JwtPayload } from '../modules/auth/jwt';
 import type { Role } from '../modules/users/user.types';
 import { AppError } from '../utils/AppError';
 
+// Extends Express's Request type with an optional `user` field so
+// downstream handlers get typed access to the authenticated user's
+// JWT payload (id + role) after requireAuth has run.
 export interface AuthenticatedRequest extends Request {
   user?: JwtPayload;
 }
 
+// Authentication gate: reads the JWT from the httpOnly auth cookie, verifies
+// its signature/expiry, and attaches the decoded payload to `req.user`.
+// Any route that needs a logged-in user (of any role) uses this middleware.
+// Responds 401 if the cookie is missing or the token is invalid/expired.
 export function requireAuth(req: AuthenticatedRequest, _res: Response, next: NextFunction): void {
   const token = req.cookies?.[env.COOKIE_NAME] as string | undefined;
   if (!token) {
@@ -22,6 +29,11 @@ export function requireAuth(req: AuthenticatedRequest, _res: Response, next: Nex
   }
 }
 
+// Authorization gate: must run AFTER requireAuth (it relies on req.user
+// already being set). Restricts a route to specific roles, e.g.
+// requireRole('OWNER') for menu/inventory/supplier/report management, or
+// requireRole('OWNER', 'CASHIER') for sales. Responds 403 if the
+// authenticated user's role isn't in the allowed list.
 export function requireRole(...roles: Role[]) {
   return (req: AuthenticatedRequest, _res: Response, next: NextFunction): void => {
     if (!req.user) {
