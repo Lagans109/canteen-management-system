@@ -9,18 +9,21 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().int().positive().default(4000),
   // Connection string for the MongoDB database (see server/.env.example for the variable name only).
-  MONGODB_URI: z.string().min(1, 'MONGODB_URI is required'),
+  MONGODB_URI: z.string().trim().min(1, 'MONGODB_URI is required'),
   // Secret key used to sign/verify JWTs — must be long enough to resist guessing.
-  JWT_SECRET: z.string().min(16, 'JWT_SECRET must be at least 16 characters'),
+  JWT_SECRET: z.string().trim().min(16, 'JWT_SECRET must be at least 16 characters'),
   // How long an issued JWT (and its cookie) stays valid, e.g. "1d".
-  JWT_EXPIRES_IN: z.string().default('1d'),
+  JWT_EXPIRES_IN: z.string().trim().default('1d'),
   // Name of the cookie that stores the JWT.
-  COOKIE_NAME: z.string().default('canteen_token'),
+  COOKIE_NAME: z.string().trim().default('canteen_token'),
   // Cookie SameSite policy — 'lax' works when frontend and API share a site;
   // 'none' is needed only for cross-origin deployments (requires HTTPS).
   COOKIE_SAME_SITE: z.enum(['lax', 'strict', 'none']).default('lax'),
   // The frontend's origin — used to configure CORS so only this origin can call the API with credentials.
-  CLIENT_ORIGIN: z.string().default('http://localhost:5173'),
+  // Trimmed because dashboard env-var UIs (Render, etc.) commonly carry an
+  // invisible trailing newline/space from copy-paste, and a raw newline here
+  // crashes Node when the cors middleware tries to set the response header.
+  CLIENT_ORIGIN: z.string().trim().default('http://localhost:5173'),
 });
 
 export type Env = z.infer<typeof envSchema>;
