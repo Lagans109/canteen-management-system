@@ -1,6 +1,7 @@
 import { MenuItem } from '../menu/menuItem.model';
 import { Sale, type SaleDocument } from './sale.model';
 import { AppError } from '../../utils/AppError';
+import { deductForSale } from '../inventory/inventory.service';
 import type { CreateSaleInput, ListSalesQuery } from './sale.validation';
 
 // A minimal, trusted snapshot of a menu item's name/price at the moment a
@@ -62,6 +63,12 @@ export function round2(value: number): number {
 // if the request still references its id. The resulting line items store a
 // name/price *snapshot*, so this sale's numbers never change even if the
 // menu item's price changes later.
+//
+// After the sale is persisted, stock is auto-deducted for any line item
+// whose menu item has a linked InventoryItem (see deductForSale). This runs
+// after Sale.create so a hiccup in inventory bookkeeping (e.g. a concurrent
+// update conflict) never prevents the sale itself from being recorded — the
+// sale is already the source of truth; inventory is best-effort follow-up.
 export async function createSale(input: CreateSaleInput, createdBy: string): Promise<SaleDocument> {
   const ids = input.items.map((i) => i.menuItem);
   const menuItems = await MenuItem.find({ _id: { $in: ids }, active: true, available: true });
@@ -73,7 +80,17 @@ export async function createSale(input: CreateSaleInput, createdBy: string): Pro
 
   const { lines, totalAmount } = calculateLineItems(input.items, catalog);
 
-  return Sale.create({ items: lines, totalAmount, createdBy });
+  const sale = await Sale.create({ items: lines, totalAmount, createdBy });
+
+  await Promise.all(
+    lines.map((line) =>
+      deductForSale(line.menuItem, line.quantity, createdBy).catch((err: unknown) => {
+        console.error(`Inventory auto-deduction failed for menu item ${line.menuItem}:`, err);
+      }),
+    ),
+  );
+
+  return sale;
 }
 
 // Returns a page of sale records, optionally filtered by a createdAt date

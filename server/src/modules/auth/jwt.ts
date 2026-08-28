@@ -3,8 +3,10 @@ import { env } from '../../config/env';
 import type { Role } from '../users/user.types';
 
 // What gets encoded inside the JWT: the user's id (`sub`, JWT convention for
-// "subject") and their role. Kept minimal — no name/email — so the token
-// stays small and role checks (requireRole) don't need a database lookup.
+// "subject") and their role. `role` is carried purely as a display label
+// (shown in the admin topbar) — it plays no part in access control, since
+// OWNER and CASHIER have identical permissions. Kept minimal — no
+// name/email — so the token stays small.
 export interface JwtPayload {
   sub: string;
   role: Role;

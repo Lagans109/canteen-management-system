@@ -43,45 +43,15 @@ export function App() {
                 </ProtectedRoute>
               }
             >
-              {/* Dashboard and Sales are usable by both OWNER and CASHIER. */}
+              {/* OWNER and CASHIER have identical access to every admin
+                  page — the outer ProtectedRoute above already covers
+                  "must be logged in"; no per-route role restriction. */}
               <Route path="dashboard" element={<DashboardPage />} />
               <Route path="sales" element={<SalesPage />} />
-
-              {/* Menu/Inventory/Suppliers/Reports are OWNER-only — each gets
-                  its own nested ProtectedRoute with an explicit `roles` list,
-                  on top of the outer (login-only) ProtectedRoute above. */}
-              <Route
-                path="menu"
-                element={
-                  <ProtectedRoute roles={['OWNER']}>
-                    <MenuManagementPage />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="inventory"
-                element={
-                  <ProtectedRoute roles={['OWNER']}>
-                    <InventoryPage />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="suppliers"
-                element={
-                  <ProtectedRoute roles={['OWNER']}>
-                    <SuppliersPage />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="reports"
-                element={
-                  <ProtectedRoute roles={['OWNER']}>
-                    <ReportsPage />
-                  </ProtectedRoute>
-                }
-              />
+              <Route path="menu" element={<MenuManagementPage />} />
+              <Route path="inventory" element={<InventoryPage />} />
+              <Route path="suppliers" element={<SuppliersPage />} />
+              <Route path="reports" element={<ReportsPage />} />
             </Route>
           </Routes>
         </BrowserRouter>

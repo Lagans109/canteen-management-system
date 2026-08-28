@@ -1,5 +1,6 @@
 import { Category, type CategoryDocument } from './category.model';
 import { MenuItem, type MenuItemDocument } from './menuItem.model';
+import { InventoryItem } from '../inventory/inventoryItem.model';
 import { AppError } from '../../utils/AppError';
 import type { PublicMenuItem } from './menu.types';
 
@@ -65,4 +66,19 @@ export async function deleteCategoryOrThrow(categoryId: string): Promise<void> {
   if (!deleted) {
     throw new AppError('Category not found', 404);
   }
+}
+
+// Hard-deletes a menu item. Sales keep a name/price snapshot independent of
+// this document, so historical sales are unaffected (see sale.model.ts).
+// Any InventoryItem still linked to it via sourceMenuItem is deactivated
+// rather than left pointing at a now-nonexistent menu item — its quantity
+// and transaction history stay intact for the audit trail, it's just no
+// longer tracked as an active stock line (and deductForSale/low-stock
+// already ignore inactive items).
+export async function deleteMenuItemOrThrow(menuItemId: string): Promise<void> {
+  const deleted = await MenuItem.findByIdAndDelete(menuItemId);
+  if (!deleted) {
+    throw new AppError('Menu item not found', 404);
+  }
+  await InventoryItem.updateMany({ sourceMenuItem: menuItemId }, { $set: { active: false } });
 }

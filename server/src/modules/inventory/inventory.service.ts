@@ -89,6 +89,55 @@ export async function recordTransaction(
   throw new AppError('Inventory item is being updated concurrently, please retry', 409);
 }
 
+// Auto-deducts stock for one sold menu item, if (and only if) that menu
+// item has a linked InventoryItem (via sourceMenuItem). Called from
+// sale.service.ts's createSale for each line item.
+//
+// Two deliberate differences from recordTransaction:
+//   - No linked InventoryItem is not an error — most menu items may not be
+//     stock-tracked at all, so this is a silent no-op in that case.
+//   - Insufficient stock never blocks or fails the sale: the deduction
+//     clamps at zero instead of throwing, since inventory tracking here is
+//     supplementary bookkeeping, not a gate on recording a sale.
+// Uses the same optimistic-concurrency retry loop as recordTransaction.
+export async function deductForSale(
+  menuItemId: string,
+  quantitySold: number,
+  createdBy: string,
+): Promise<void> {
+  for (let attempt = 0; attempt < MAX_CONCURRENT_UPDATE_ATTEMPTS; attempt += 1) {
+    const current = await InventoryItem.findOne({ sourceMenuItem: menuItemId, active: true });
+    if (!current) return;
+
+    const quantityBefore = current.quantity;
+    const quantityChange = -Math.min(quantitySold, quantityBefore);
+    if (quantityChange === 0) return;
+
+    const quantityAfter = round2(quantityBefore + quantityChange);
+
+    const updated = await InventoryItem.findOneAndUpdate(
+      { _id: current._id, quantity: quantityBefore },
+      { $set: { quantity: quantityAfter } },
+      { new: true },
+    );
+
+    if (!updated) continue;
+
+    await InventoryTransaction.create({
+      inventoryItem: updated._id,
+      type: 'SALE',
+      quantityChange,
+      quantityBefore,
+      quantityAfter,
+      reason: 'Auto-deducted from sale',
+      createdBy,
+    });
+    return;
+  }
+
+  throw new AppError('Inventory item is being updated concurrently, please retry', 409);
+}
+
 // Full transaction history for one item, most recent first, with the
 // staff member who made each change attached.
 export function listTransactionsForItem(inventoryItemId: string): Promise<InventoryTransactionDocument[]> {

@@ -33,7 +33,7 @@ const emptyItemForm: ItemFormState = {
   imageUrl: '',
 };
 
-// OWNER-only admin screen for managing categories and menu items. Every
+// Admin screen for managing categories and menu items, open to OWNER and CASHIER alike. Every
 // mutation (create/update/delete) re-fetches the full lists afterward via
 // `load()` rather than patching local state manually, keeping this page's
 // data always in sync with the database.

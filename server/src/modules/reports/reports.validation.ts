@@ -6,7 +6,7 @@ import { z } from 'zod';
 // and `to` — otherwise there'd be nothing to resolve a range from.
 export const reportQuerySchema = z
   .object({
-    preset: z.enum(['today', 'yesterday', 'last7days', 'week', 'month', 'custom']).default('today'),
+    preset: z.enum(['today', 'yesterday', 'last7days', 'week', 'month', 'year', 'custom']).default('today'),
     from: z.string().date().optional(),
     to: z.string().date().optional(),
   })
@@ -20,7 +20,7 @@ export type ReportQuery = z.infer<typeof reportQuerySchema>;
 // to return (default 10, capped at 50 to keep the response small).
 export const topItemsQuerySchema = z
   .object({
-    preset: z.enum(['today', 'yesterday', 'last7days', 'week', 'month', 'custom']).default('today'),
+    preset: z.enum(['today', 'yesterday', 'last7days', 'week', 'month', 'year', 'custom']).default('today'),
     from: z.string().date().optional(),
     to: z.string().date().optional(),
     limit: z.coerce.number().int().positive().max(50).default(10),

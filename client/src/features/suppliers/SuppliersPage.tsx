@@ -27,7 +27,7 @@ const emptyForm: FormState = {
   active: true,
 };
 
-// OWNER-only vendor management screen — a straightforward CRUD page (no
+// Vendor management screen, open to OWNER and CASHIER alike — a straightforward CRUD page (no
 // search/filter/pagination, since supplier lists are expected to stay
 // small; see supplierService.ts/supplier.controller.ts for the backend side).
 export function SuppliersPage() {

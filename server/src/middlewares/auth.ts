@@ -1,7 +1,6 @@
 import type { NextFunction, Request, Response } from 'express';
 import { env } from '../config/env';
 import { verifyToken, type JwtPayload } from '../modules/auth/jwt';
-import type { Role } from '../modules/users/user.types';
 import { AppError } from '../utils/AppError';
 
 // Extends Express's Request type with an optional `user` field so
@@ -29,21 +28,3 @@ export function requireAuth(req: AuthenticatedRequest, _res: Response, next: Nex
   }
 }
 
-// Authorization gate: must run AFTER requireAuth (it relies on req.user
-// already being set). Restricts a route to specific roles, e.g.
-// requireRole('OWNER') for menu/inventory/supplier/report management, or
-// requireRole('OWNER', 'CASHIER') for sales. Responds 403 if the
-// authenticated user's role isn't in the allowed list.
-export function requireRole(...roles: Role[]) {
-  return (req: AuthenticatedRequest, _res: Response, next: NextFunction): void => {
-    if (!req.user) {
-      next(new AppError('Authentication required', 401));
-      return;
-    }
-    if (!roles.includes(req.user.role)) {
-      next(new AppError('You do not have permission to perform this action', 403));
-      return;
-    }
-    next();
-  };
-}

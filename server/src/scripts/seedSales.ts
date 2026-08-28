@@ -12,6 +12,12 @@ import { calculateLineItems, round2, type MenuItemSnapshot } from '../modules/sa
 // Inserted directly via the raw MongoDB collection (see `salesCollection`
 // below) rather than one-by-one through Sale.create(), since generating
 // months of data one Mongoose document at a time would be far slower.
+//
+// The history always extends through *today* (not a fixed end date), and
+// running this script again on a later day only fills in the missing days
+// since the last run — it never re-generates or duplicates days that were
+// already seeded (see the SeedState marker below). Run it periodically
+// (e.g. before a demo) to keep the data looking current.
 
 interface RawSaleLineItem {
   menuItem: mongoose.Types.ObjectId;
@@ -33,12 +39,18 @@ interface RawSaleDoc {
 const SEEDED_CATEGORY_NAMES = ['Chocolates', 'Cold Drinks', 'Biscuits', 'Chips & Snacks', 'Bakery Items'];
 
 const HISTORY_START = new Date('2026-02-09T00:00:00.000');
-const HISTORY_END = new Date('2026-08-09T23:59:59.999');
 
-// Identifies this specific seed run (by its date range) so re-running the
-// script doesn't keep appending duplicate history — see the SeedState
-// model and the "already seeded" check in main() below.
-const SEED_KEY = `demo-sales_${HISTORY_START.toISOString().slice(0, 10)}_${HISTORY_END.toISOString().slice(0, 10)}`;
+function todayEnd(): Date {
+  const d = new Date();
+  d.setHours(23, 59, 59, 999);
+  return d;
+}
+
+// Identifies this demo-sales run (independent of any specific end date, since
+// the end date keeps moving to "today") so re-running the script extends the
+// existing history instead of duplicating it — see the SeedState model and
+// the range calculation in main() below.
+const SEED_KEY = `demo-sales_from_${HISTORY_START.toISOString().slice(0, 10)}`;
 
 /** Month multipliers (0 = January) reflecting the requested seasonal pattern. */
 const MONTH_MULTIPLIER: Record<number, number> = {
@@ -157,25 +169,41 @@ function pickDistinctItems(pool: WeightedItem[], count: number): MenuItemSnapsho
 async function main(): Promise<void> {
   await connectDB();
 
+  const rangeEnd = todayEnd();
+
   // Guards against accidentally generating duplicate history if the script
-  // is run more than once for the same date range. Set SEED_SALES_RESET=true
-  // to intentionally wipe and regenerate it.
+  // is run more than once. Set SEED_SALES_RESET=true to wipe and regenerate
+  // the whole range from scratch instead of extending it.
   const force = process.env.SEED_SALES_RESET === 'true';
   const existingMarker = await SeedState.findOne({ key: SEED_KEY });
 
-  if (existingMarker && !force) {
-    console.log(
-      `Demo sales already seeded for ${HISTORY_START.toISOString().slice(0, 10)} to ${HISTORY_END.toISOString().slice(0, 10)} ` +
-        `(${existingMarker.get('count')} sales). Skipping. Set SEED_SALES_RESET=true to regenerate.`,
-    );
-    await mongoose.disconnect();
-    return;
-  }
+  let rangeStart: Date;
+  let priorCount = 0;
 
   if (existingMarker && force) {
-    const deleted = await Sale.deleteMany({ createdAt: { $gte: HISTORY_START, $lte: HISTORY_END } });
+    const deleted = await Sale.deleteMany({ createdAt: { $gte: HISTORY_START, $lte: rangeEnd } });
     await SeedState.deleteOne({ key: SEED_KEY });
     console.log(`SEED_SALES_RESET=true: removed ${deleted.deletedCount} previously seeded demo sales.`);
+    rangeStart = HISTORY_START;
+  } else if (existingMarker) {
+    const previousEnd = existingMarker.get('dateTo') as Date;
+    if (previousEnd.getTime() >= rangeEnd.getTime()) {
+      console.log(
+        `Demo sales already seeded through ${previousEnd.toISOString().slice(0, 10)} ` +
+          `(${existingMarker.get('count')} sales total). Nothing to extend.`,
+      );
+      await mongoose.disconnect();
+      return;
+    }
+    rangeStart = new Date(previousEnd);
+    rangeStart.setDate(rangeStart.getDate() + 1);
+    rangeStart.setHours(0, 0, 0, 0);
+    priorCount = (existingMarker.get('count') as number) ?? 0;
+    console.log(
+      `Extending demo sales from ${rangeStart.toISOString().slice(0, 10)} through ${rangeEnd.toISOString().slice(0, 10)}.`,
+    );
+  } else {
+    rangeStart = HISTORY_START;
   }
 
   const categories = await Category.find({ name: { $in: SEEDED_CATEGORY_NAMES } });
@@ -238,11 +266,13 @@ async function main(): Promise<void> {
     batch = [];
   };
 
-  // Walks one calendar day at a time across the whole history window,
-  // generating a random number of sales (with random items/times) for each day.
+  // Walks one calendar day at a time across [rangeStart, rangeEnd] (the
+  // whole history on a first run, or just the newly-missing days when
+  // extending previously-seeded history), generating a random number of
+  // sales (with random items/times) for each day.
   for (
-    let day = new Date(HISTORY_START);
-    day.getTime() <= HISTORY_END.getTime();
+    let day = new Date(rangeStart);
+    day.getTime() <= rangeEnd.getTime();
     day.setDate(day.getDate() + 1)
   ) {
     const monthKey = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}`;
@@ -294,24 +324,31 @@ async function main(): Promise<void> {
 
   await flush();
 
-  // Records that this date range has now been seeded, so a second run
-  // without SEED_SALES_RESET=true will skip instead of duplicating data.
-  await SeedState.create({
-    key: SEED_KEY,
-    seededAt: new Date(),
-    count: totalInserted,
-    dateFrom: HISTORY_START,
-    dateTo: HISTORY_END,
-  });
+  // Records how far this date range has now been seeded (cumulative count),
+  // so a later run only fills in the days after `dateTo` instead of
+  // duplicating anything already generated.
+  await SeedState.findOneAndUpdate(
+    { key: SEED_KEY },
+    {
+      $set: {
+        seededAt: new Date(),
+        count: priorCount + totalInserted,
+        dateFrom: HISTORY_START,
+        dateTo: rangeEnd,
+      },
+    },
+    { upsert: true },
+  );
 
   const topItems = Array.from(itemTotals.entries())
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5);
 
-  console.log(`Demo sales seed complete: ${totalInserted} sales inserted.`);
-  console.log(`Date range: ${HISTORY_START.toISOString()} to ${HISTORY_END.toISOString()}`);
-  console.log(`Total demo sales amount: ₹${totalAmount.toFixed(2)}`);
-  console.log(`Average sale value: ₹${(totalAmount / totalInserted).toFixed(2)}`);
+  console.log(`Demo sales seed complete: ${totalInserted} new sales inserted.`);
+  console.log(`Newly generated range: ${rangeStart.toISOString()} to ${rangeEnd.toISOString()}`);
+  console.log(`Full seeded history now runs ${HISTORY_START.toISOString()} to ${rangeEnd.toISOString()} (${priorCount + totalInserted} sales total).`);
+  console.log(`Total amount for this run: ₹${totalAmount.toFixed(2)}`);
+  console.log(`Average sale value (this run): ₹${(totalAmount / totalInserted).toFixed(2)}`);
   console.log('Monthly breakdown:');
   for (const [month, data] of Array.from(monthlyTotals.entries()).sort()) {
     console.log(`  ${month}: ${data.count} sales, ₹${data.amount.toFixed(2)}`);

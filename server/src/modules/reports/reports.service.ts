@@ -134,6 +134,112 @@ export async function getSalesByCategory(range: DateRange): Promise<CategorySale
   ]);
 }
 
+export interface ItemProfitability {
+  name: string;
+  quantity: number;
+  revenue: number;
+  // `cost`/`profit` are null when the item has no linked InventoryItem (no
+  // recorded costPrice) — its cost is unknown, not zero, so it's kept out
+  // of the cost/profit totals rather than silently counted as pure profit.
+  cost: number | null;
+  profit: number | null;
+}
+
+export interface ProfitSummary {
+  totalRevenue: number;
+  totalCost: number;
+  totalProfit: number;
+  // Profit margin over only the revenue from cost-tracked items — mixing in
+  // untracked-item revenue (unknown cost) would understate the true margin.
+  marginPercent: number;
+  itemsWithoutCost: number;
+}
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+// Breaks total sales down by item name with per-item cost/profit, using the
+// item's *current* InventoryItem.costPrice (there's no historical cost
+// snapshot on the sale line itself — see sale.model.ts) looked up via
+// sourceMenuItem, the same link deductForSale uses. Items never linked to
+// an InventoryItem (or whose link was later removed) come back with
+// cost/profit as null instead of 0, since their cost is unknown, not free.
+export async function getItemProfitability(range: DateRange): Promise<ItemProfitability[]> {
+  return Sale.aggregate<ItemProfitability>([
+    { $match: dateMatch(range) },
+    { $unwind: '$items' },
+    {
+      $lookup: {
+        from: 'inventoryitems',
+        localField: 'items.menuItem',
+        foreignField: 'sourceMenuItem',
+        as: 'inventoryDoc',
+      },
+    },
+    { $addFields: { unitCost: { $arrayElemAt: ['$inventoryDoc.costPrice', 0] } } },
+    {
+      $group: {
+        _id: '$items.name',
+        quantity: { $sum: '$items.quantity' },
+        revenue: { $sum: '$items.lineTotal' },
+        cost: {
+          $sum: {
+            $cond: [{ $eq: ['$unitCost', null] }, 0, { $multiply: ['$unitCost', '$items.quantity'] }],
+          },
+        },
+        // 1 if ANY line contributing to this item had no known cost, so the
+        // group's cost/profit can be nulled out below rather than
+        // understated by treating that line's cost as zero.
+        hasUnknownCost: { $max: { $cond: [{ $eq: ['$unitCost', null] }, 1, 0] } },
+      },
+    },
+    {
+      $project: {
+        _id: 0,
+        name: '$_id',
+        quantity: 1,
+        revenue: 1,
+        cost: { $cond: ['$hasUnknownCost', null, '$cost'] },
+        profit: { $cond: ['$hasUnknownCost', null, { $subtract: ['$revenue', '$cost'] }] },
+      },
+    },
+    { $sort: { revenue: -1 } },
+  ]);
+}
+
+// Rolls per-item profitability up into report-level totals. Revenue counts
+// every sold item; cost/profit/margin only count items with a known cost
+// price, and `itemsWithoutCost` surfaces how many distinct items were
+// excluded so the UI can flag that the profit figure is partial.
+export function summarizeProfitability(items: ItemProfitability[]): ProfitSummary {
+  let totalRevenue = 0;
+  let totalCost = 0;
+  let trackedRevenue = 0;
+  let itemsWithoutCost = 0;
+
+  for (const item of items) {
+    totalRevenue += item.revenue;
+    if (item.cost === null) {
+      itemsWithoutCost += 1;
+    } else {
+      totalCost += item.cost;
+      trackedRevenue += item.revenue;
+    }
+  }
+
+  const totalProfit = round2(trackedRevenue - totalCost);
+  const marginPercent = trackedRevenue > 0 ? round2((totalProfit / trackedRevenue) * 100) : 0;
+
+  return {
+    totalRevenue: round2(totalRevenue),
+    totalCost: round2(totalCost),
+    totalProfit,
+    marginPercent,
+    itemsWithoutCost,
+  };
+}
+
 // Groups sales by calendar day (in "YYYY-MM-DD" form) within the range —
 // used to draw the daily sales trend chart.
 export async function getDailySales(range: DateRange): Promise<DailySales[]> {

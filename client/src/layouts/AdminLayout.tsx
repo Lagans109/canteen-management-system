@@ -12,16 +12,15 @@ import {
 } from '../components/Icons';
 import type { ComponentType, SVGProps } from 'react';
 
-// The sidebar navigation for the admin area. `ownerOnly` items are hidden
-// entirely for CASHIER users (this mirrors, but does not replace, the
-// server-side role checks and the nested ProtectedRoute roles in App.tsx).
-const NAV_ITEMS: { to: string; label: string; icon: ComponentType<SVGProps<SVGSVGElement>>; ownerOnly?: boolean }[] = [
+// The sidebar navigation for the admin area. OWNER and CASHIER accounts see
+// the exact same set of links — there's no role-based restriction in this system.
+const NAV_ITEMS: { to: string; label: string; icon: ComponentType<SVGProps<SVGSVGElement>> }[] = [
   { to: '/admin/dashboard', label: 'Dashboard', icon: IconDashboard },
   { to: '/admin/sales', label: 'Sales', icon: IconSales },
-  { to: '/admin/menu', label: 'Menu', icon: IconMenu, ownerOnly: true },
-  { to: '/admin/inventory', label: 'Inventory', icon: IconInventory, ownerOnly: true },
-  { to: '/admin/suppliers', label: 'Suppliers', icon: IconSuppliers, ownerOnly: true },
-  { to: '/admin/reports', label: 'Reports', icon: IconReports, ownerOnly: true },
+  { to: '/admin/menu', label: 'Menu', icon: IconMenu },
+  { to: '/admin/inventory', label: 'Inventory', icon: IconInventory },
+  { to: '/admin/suppliers', label: 'Suppliers', icon: IconSuppliers },
+  { to: '/admin/reports', label: 'Reports', icon: IconReports },
 ];
 
 // Shell layout rendered for every /admin/* route (see App.tsx): a sidebar
@@ -37,8 +36,6 @@ export function AdminLayout() {
     navigate('/admin/login');
   };
 
-  // Cashiers only see Dashboard/Sales links; owners see everything.
-  const visibleItems = NAV_ITEMS.filter((item) => !item.ownerOnly || user?.role === 'OWNER');
   const initials = user?.name
     ? user.name
         .split(' ')
@@ -58,7 +55,7 @@ export function AdminLayout() {
           Canteen Admin
         </div>
         <div>
-          {visibleItems.map((item) => (
+          {NAV_ITEMS.map((item) => (
             <NavLink key={item.to} to={item.to} className={({ isActive }) => (isActive ? 'active' : '')}>
               <item.icon />
               {item.label}

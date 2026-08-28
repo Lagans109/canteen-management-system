@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { requireAuth, requireRole } from '../../middlewares/auth';
+import { requireAuth } from '../../middlewares/auth';
 import { validate } from '../../middlewares/validate';
 import { createInventoryItemSchema, updateInventoryItemSchema, createTransactionSchema } from './inventory.validation';
 import {
@@ -14,8 +14,9 @@ import {
 
 export const inventoryRouter = Router();
 
-// Inventory is OWNER-only — cashiers record sales but don't manage stock.
-inventoryRouter.use(requireAuth, requireRole('OWNER'));
+// Inventory management is open to any logged-in staff account (OWNER or
+// CASHIER) — both have identical access in this system.
+inventoryRouter.use(requireAuth);
 
 // GET /api/inventory
 // Returns a paginated list of inventory items.

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { hashPassword, comparePassword } from '../src/modules/auth/password';
 import { signToken, verifyToken } from '../src/modules/auth/jwt';
 import { loginSchema } from '../src/modules/auth/auth.validation';
-import { requireAuth, requireRole, type AuthenticatedRequest } from '../src/middlewares/auth';
+import { requireAuth, type AuthenticatedRequest } from '../src/middlewares/auth';
 import { AppError } from '../src/utils/AppError';
 
 describe('password hashing', () => {
@@ -78,31 +78,6 @@ describe('requireAuth middleware', () => {
     const req = { cookies: { canteen_token: 'garbage' } } as unknown as AuthenticatedRequest;
     const next = vi.fn();
     requireAuth(req, mockRes(), next);
-    const err = next.mock.calls[0]?.[0] as AppError;
-    expect(err.statusCode).toBe(401);
-  });
-});
-
-describe('requireRole middleware', () => {
-  it('allows a user with an allowed role', () => {
-    const req = { user: { sub: '1', role: 'OWNER' } } as unknown as AuthenticatedRequest;
-    const next = vi.fn();
-    requireRole('OWNER', 'CASHIER')(req, mockRes(), next);
-    expect(next).toHaveBeenCalledWith();
-  });
-
-  it('blocks a user without an allowed role', () => {
-    const req = { user: { sub: '1', role: 'CASHIER' } } as unknown as AuthenticatedRequest;
-    const next = vi.fn();
-    requireRole('OWNER')(req, mockRes(), next);
-    const err = next.mock.calls[0]?.[0] as AppError;
-    expect(err.statusCode).toBe(403);
-  });
-
-  it('blocks an unauthenticated request', () => {
-    const req = {} as unknown as AuthenticatedRequest;
-    const next = vi.fn();
-    requireRole('OWNER')(req, mockRes(), next);
     const err = next.mock.calls[0]?.[0] as AppError;
     expect(err.statusCode).toBe(401);
   });

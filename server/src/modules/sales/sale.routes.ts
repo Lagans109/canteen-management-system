@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { requireAuth, requireRole } from '../../middlewares/auth';
+import { requireAuth } from '../../middlewares/auth';
 import { validate } from '../../middlewares/validate';
 import { createSaleSchema, listSalesQuerySchema } from './sale.validation';
 import { createSaleHandler, listSalesHandler, getSaleHandler } from './sale.controller';
@@ -7,8 +7,8 @@ import { createSaleHandler, listSalesHandler, getSaleHandler } from './sale.cont
 export const saleRouter = Router();
 
 // Both OWNER and CASHIER can record and view sales — this is the everyday
-// point-of-sale workflow, not an owner-only management feature.
-saleRouter.use(requireAuth, requireRole('OWNER', 'CASHIER'));
+// point-of-sale workflow.
+saleRouter.use(requireAuth);
 
 // GET /api/sales — list sale records. Query params (page, limit, from, to)
 // are validated/coerced by listSalesQuerySchema before reaching the

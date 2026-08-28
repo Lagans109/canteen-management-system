@@ -1,6 +1,14 @@
 import { useEffect, useState } from 'react';
 import * as reportService from '../../services/reportService';
-import type { CategorySales, DailySales, DatePreset, ItemSales, SalesSummary } from '../../types';
+import type {
+  CategorySales,
+  DailySales,
+  DatePreset,
+  ItemProfitability,
+  ItemSales,
+  ProfitSummary,
+  SalesSummary,
+} from '../../types';
 import { LoadingState, ErrorState, EmptyState } from '../../components/StateViews';
 import { MiniBarChart } from '../../components/MiniBarChart';
 import { IconReceipt, IconSales, IconTrend } from '../../components/Icons';
@@ -11,10 +19,11 @@ const PRESETS: { value: DatePreset; label: string }[] = [
   { value: 'last7days', label: 'Last 7 Days' },
   { value: 'week', label: 'Current Week' },
   { value: 'month', label: 'Current Month' },
+  { value: 'year', label: 'Current Year' },
   { value: 'custom', label: 'Custom Range' },
 ];
 
-// OWNER-only reporting screen: lets the owner pick a date range (a named
+// Reporting screen, open to OWNER and CASHIER alike: lets you pick a date range (a named
 // preset, or a custom from/to pair) and see sales totals, breakdowns by
 // item/category, and a daily trend chart for that range.
 export function ReportsPage() {
@@ -28,10 +37,12 @@ export function ReportsPage() {
   const [byItem, setByItem] = useState<ItemSales[]>([]);
   const [byCategory, setByCategory] = useState<CategorySales[]>([]);
   const [daily, setDaily] = useState<DailySales[]>([]);
+  const [profitSummary, setProfitSummary] = useState<ProfitSummary | null>(null);
+  const [byItemProfit, setByItemProfit] = useState<ItemProfitability[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // Fetches the sales report and daily-sales report together for the
+  // Fetches the sales, daily-sales, and profit reports together for the
   // current preset/from/to. For a custom range, waits until both `from`
   // and `to` are filled in before calling the API (there's nothing useful
   // to query otherwise).
@@ -41,20 +52,33 @@ export function ReportsPage() {
     setError(null);
     try {
       const params = { preset, from: from || undefined, to: to || undefined };
-      const [salesReport, dailyReport] = await Promise.all([
+      const [salesReport, dailyReport, profitReport] = await Promise.all([
         reportService.getSalesReport(params),
         reportService.getDailySalesReport(params),
+        reportService.getProfitReport(params),
       ]);
       setSummary(salesReport.summary);
       setByItem(salesReport.byItem);
       setByCategory(salesReport.byCategory);
       setDaily(dailyReport.days);
+      setProfitSummary(profitReport.summary);
+      setByItemProfit(profitReport.byItem);
     } catch {
       setError('Unable to load report data.');
     } finally {
       setLoading(false);
     }
   };
+
+  // Labels the profit stat tiles with the currently-selected period (e.g.
+  // "Today's Profit", "Current Month Cost of Goods") so it's clear at a
+  // glance which range the totals below belong to.
+  const periodLabel =
+    preset === 'today' || preset === 'yesterday'
+      ? `${PRESETS.find((p) => p.value === preset)!.label}'s`
+      : preset === 'custom'
+        ? 'Range'
+        : (PRESETS.find((p) => p.value === preset)?.label ?? 'Period');
 
   // Re-fetches automatically whenever the preset changes (e.g. clicking
   // "Last 7 Days"). For 'custom', the user instead triggers the fetch
@@ -150,6 +174,89 @@ export function ReportsPage() {
               formatValue={(v) => `₹${v.toFixed(0)}`}
             />
           </div>
+
+          {profitSummary && (
+            <>
+              <div className="stat-grid" style={{ marginBottom: 20 }}>
+                <div className="stat-tile">
+                  <div>
+                    <div className="value">₹{profitSummary.totalRevenue.toFixed(2)}</div>
+                    <div className="label">{periodLabel} Revenue</div>
+                  </div>
+                  <span className="icon-wrap">
+                    <IconSales />
+                  </span>
+                </div>
+                <div className="stat-tile warning">
+                  <div>
+                    <div className="value">₹{profitSummary.totalCost.toFixed(2)}</div>
+                    <div className="label">{periodLabel} Cost of Goods</div>
+                  </div>
+                  <span className="icon-wrap">
+                    <IconReceipt />
+                  </span>
+                </div>
+                <div className={`stat-tile ${profitSummary.totalProfit < 0 ? 'danger' : 'accent'}`}>
+                  <div>
+                    <div className="value">₹{profitSummary.totalProfit.toFixed(2)}</div>
+                    <div className="label">
+                      {periodLabel} Profit ({profitSummary.marginPercent.toFixed(1)}% margin)
+                    </div>
+                  </div>
+                  <span className="icon-wrap">
+                    <IconTrend />
+                  </span>
+                </div>
+              </div>
+
+              <div className="card" style={{ marginBottom: 20 }}>
+                <h2 className="section-title">Profit by Item</h2>
+                {profitSummary.itemsWithoutCost > 0 && (
+                  <p style={{ fontSize: 13, color: 'var(--color-muted)', marginTop: -6, marginBottom: 12 }}>
+                    {profitSummary.itemsWithoutCost} item{profitSummary.itemsWithoutCost === 1 ? '' : 's'} sold in
+                    this range {profitSummary.itemsWithoutCost === 1 ? "isn't" : "aren't"} linked to an inventory
+                    cost price — shown with "—" below and excluded from the totals above.
+                  </p>
+                )}
+                {byItemProfit.length === 0 ? (
+                  <EmptyState label="No sales in this range." />
+                ) : (
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Item</th>
+                          <th>Qty</th>
+                          <th>Revenue</th>
+                          <th>Cost</th>
+                          <th>Profit</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {byItemProfit.map((i) => (
+                          <tr key={i.name}>
+                            <td>{i.name}</td>
+                            <td>{i.quantity}</td>
+                            <td>₹{i.revenue.toFixed(2)}</td>
+                            <td>{i.cost === null ? '—' : `₹${i.cost.toFixed(2)}`}</td>
+                            <td
+                              style={
+                                i.profit !== null
+                                  ? { color: i.profit < 0 ? 'var(--color-danger)' : 'var(--color-accent)', fontWeight: 600 }
+                                  : undefined
+                              }
+                            >
+                              {i.profit === null ? '—' : `₹${i.profit.toFixed(2)}`}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
 
           <div className="panel-grid">
             <div className="card">

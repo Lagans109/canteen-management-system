@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: canteen-backend
+    runtime: docker
+    dockerfilePath: ./server/Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_EXPIRES_IN
+        value: 1d
+      - key: COOKIE_NAME
+        value: canteen_token
+      - key: COOKIE_SAME_SITE
+        value: none
+      # Set in the Render dashboard (Environment tab) instead of here, so
+      # they never end up in the repo:
+      - key: CLIENT_ORIGIN
+        sync: false
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false

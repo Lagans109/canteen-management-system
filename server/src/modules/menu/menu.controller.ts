@@ -9,6 +9,7 @@ import {
   listAllMenuItems,
   assertCategoryExists,
   deleteCategoryOrThrow,
+  deleteMenuItemOrThrow,
 } from './menu.service';
 import type {
   CreateCategoryInput,
@@ -87,12 +88,9 @@ export const updateMenuItem = asyncHandler(async (req: Request, res: Response) =
   res.status(200).json({ item });
 });
 
-// DELETE /api/menu/items/:id — hard delete. Note: this does not check
-// whether the item appears in past Sale records; sales keep a name/price
-// snapshot independent of the MenuItem document, so deleting an item here
-// does not affect historical sales data.
+// DELETE /api/menu/items/:id — hard delete, plus deactivating any linked
+// InventoryItem (see deleteMenuItemOrThrow in menu.service.ts).
 export const deleteMenuItem = asyncHandler(async (req: Request, res: Response) => {
-  const deleted = await MenuItem.findByIdAndDelete(req.params.id);
-  if (!deleted) throw new AppError('Menu item not found', 404);
+  await deleteMenuItemOrThrow(req.params.id as string);
   res.status(204).send();
 });

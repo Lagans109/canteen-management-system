@@ -14,7 +14,11 @@ export const createInventoryItemSchema = z.object({
   active: z.boolean().default(true),
 });
 
-export const updateInventoryItemSchema = createInventoryItemSchema.partial();
+// `quantity` is deliberately excluded here (unlike createInventoryItemSchema)
+// — stock quantity only ever changes through a recorded InventoryTransaction
+// (see createTransactionSchema/recordTransaction), never a plain field edit,
+// so every change to it stays in the audit trail.
+export const updateInventoryItemSchema = createInventoryItemSchema.omit({ quantity: true }).partial();
 
 // Validates a stock transaction request. `quantityChange` can be positive
 // or negative (its sign/meaning depends on `type`, decided by the

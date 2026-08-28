@@ -7,6 +7,8 @@ import {
   getSalesByCategory,
   getDailySales,
   getTopSellingItems,
+  getItemProfitability,
+  summarizeProfitability,
 } from './reports.service';
 import type { ReportQuery, TopItemsQuery } from './reports.validation';
 
@@ -42,4 +44,14 @@ export const getDailySalesReport = asyncHandler(async (req: Request, res: Respon
   const range = resolveDateRange(query.preset, new Date(), { from: query.from, to: query.to });
   const days = await getDailySales(range);
   res.status(200).json({ range, days });
+});
+
+// GET /api/reports/profit — per-item revenue/cost/profit (cost from each
+// item's linked InventoryItem.costPrice) plus report-level totals.
+export const getProfitReport = asyncHandler(async (req: Request, res: Response) => {
+  const query = req.query as unknown as ReportQuery;
+  const range = resolveDateRange(query.preset, new Date(), { from: query.from, to: query.to });
+  const byItem = await getItemProfitability(range);
+  const summary = summarizeProfitability(byItem);
+  res.status(200).json({ range, summary, byItem });
 });

@@ -1,5 +1,13 @@
 import { apiRequest } from '../lib/apiClient';
-import type { CategorySales, DailySales, DatePreset, ItemSales, SalesSummary } from '../types';
+import type {
+  CategorySales,
+  DailySales,
+  DatePreset,
+  ItemProfitability,
+  ItemSales,
+  ProfitSummary,
+  SalesSummary,
+} from '../types';
 
 export interface ReportQueryParams {
   preset: DatePreset;
@@ -36,4 +44,12 @@ export function getDailySalesReport(
   params: ReportQueryParams,
 ): Promise<{ range: DateRangeResponse; days: DailySales[] }> {
   return apiRequest('/reports/daily-sales', { query: params });
+}
+
+// GET /api/reports/profit — per-item revenue/cost/profit (cost from each
+// item's linked InventoryItem.costPrice) plus report-level totals.
+export function getProfitReport(
+  params: ReportQueryParams,
+): Promise<{ range: DateRangeResponse; summary: ProfitSummary; byItem: ItemProfitability[] }> {
+  return apiRequest('/reports/profit', { query: params });
 }

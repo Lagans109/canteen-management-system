@@ -1,9 +1,11 @@
 import { Schema, model, type Document, type Types } from 'mongoose';
 
 // Represents a tracked stock line (e.g. raw materials or resale goods) held
-// by the canteen. Quantity here is managed explicitly through
-// InventoryTransaction records (see inventory.service.ts) — it is never
-// automatically deducted when a Sale is created.
+// by the canteen. Quantity is always changed through InventoryTransaction
+// records (see inventory.service.ts), whether created manually (purchase,
+// adjustment, waste, return) or automatically: if this item is linked to a
+// menu item via `sourceMenuItem`, recording a Sale for that menu item
+// auto-deducts stock here (see deductForSale in inventory.service.ts).
 export interface InventoryItemDocument extends Document {
   _id: Types.ObjectId;
   name: string;
@@ -13,9 +15,10 @@ export interface InventoryItemDocument extends Document {
   minStockThreshold: number;
   costPrice: number;
   supplier?: Types.ObjectId;
-  // Optionally links this inventory item back to the menu item it was
-  // generated from (used by the seed:inventory script); not otherwise
-  // read/populated elsewhere in the app today.
+  // Optionally links this inventory item to the menu item it tracks stock
+  // for. When set, recording a Sale for that menu item auto-deducts this
+  // item's quantity (see deductForSale in inventory.service.ts). Also used
+  // by the seed:inventory script to match generated items back to menu items.
   sourceMenuItem?: Types.ObjectId;
   active: boolean;
   createdAt: Date;

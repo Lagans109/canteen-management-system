@@ -29,12 +29,42 @@ const emptyItemForm: ItemFormState = {
   supplier: '',
 };
 
+// Same static fields as ItemFormState, plus `quantity` (edited here as a
+// plain "what should it be now" number, not a +/- change) and `active`,
+// which the create form doesn't need (new items always start active).
+// Submitting a changed quantity doesn't call updateInventoryItem — the
+// backend rejects quantity on that endpoint — it goes through
+// createTransaction as an ADJUSTMENT, same as "Adjust Stock", so the change
+// still lands in the audit trail (see submitEditForm).
+interface EditFormState {
+  name: string;
+  unit: string;
+  quantity: string;
+  minStockThreshold: string;
+  costPrice: string;
+  supplier: string;
+  active: boolean;
+}
+
+function toEditForm(item: InventoryItem): EditFormState {
+  return {
+    name: item.name,
+    unit: item.unit,
+    quantity: String(item.quantity),
+    minStockThreshold: String(item.minStockThreshold),
+    costPrice: String(item.costPrice),
+    supplier: typeof item.supplier === 'object' && item.supplier ? item.supplier._id : (item.supplier ?? ''),
+    active: item.active,
+  };
+}
+
 const TRANSACTION_TYPES: TransactionType[] = ['PURCHASE', 'SALE', 'ADJUSTMENT', 'WASTE', 'RETURN'];
 
-// OWNER-only stock management screen. Item quantity is never edited
-// directly on this page — every change goes through the "Adjust Stock"
-// transaction flow below, so the backend can keep an audit trail (see
-// InventoryTransaction / recordTransaction on the backend).
+// Stock management screen, open to OWNER and CASHIER alike. Quantity can be changed either via
+// "Adjust Stock" (a +/- transaction) or by setting a new value in "Edit"
+// (see submitEditForm) — either way it's always recorded as an
+// InventoryTransaction, so the backend audit trail (see recordTransaction)
+// stays complete.
 export function InventoryPage() {
   const toast = useToast();
   // Both fetched together on mount (see `load` below); items and
@@ -47,6 +77,11 @@ export function InventoryPage() {
   const [showItemForm, setShowItemForm] = useState(false);
   const [itemForm, setItemForm] = useState<ItemFormState>(emptyItemForm);
 
+  // State for the "Edit Item" modal: which item is being edited, and its
+  // editable field values (quantity is deliberately excluded — see EditFormState).
+  const [editTarget, setEditTarget] = useState<InventoryItem | null>(null);
+  const [editForm, setEditForm] = useState<EditFormState | null>(null);
+
   // State for the "Adjust Stock" modal: which item is being adjusted, and
   // the transaction details being entered.
   const [txnTarget, setTxnTarget] = useState<InventoryItem | null>(null);
@@ -58,8 +93,6 @@ export function InventoryPage() {
   const [historyTarget, setHistoryTarget] = useState<InventoryItem | null>(null);
   const [history, setHistory] = useState<InventoryTransaction[] | null>(null);
 
-   // Loading state
-  const [loading,setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [rowsPerPage] = useState(10);
   const [totalItems, setTotalItems] = useState(0);
@@ -67,7 +100,6 @@ export function InventoryPage() {
 
   const load = useCallback(async () => {
   try {
-    setLoading(true);
     setError(null);
 
     const [inventoryRes, suppliersRes] = await Promise.all([
@@ -86,8 +118,6 @@ export function InventoryPage() {
         ? err.message
         : 'Unable to load inventory data.',
     );
-  } finally {
-    setLoading(false);
   }
 }, [page, rowsPerPage]);
   useEffect(() => {
@@ -111,6 +141,45 @@ export function InventoryPage() {
       load();
     } catch (err) {
       toast.show(err instanceof ApiError ? err.message : 'Failed to create item', 'error');
+    }
+  };
+
+  const openEdit = (item: InventoryItem) => {
+    setEditTarget(item);
+    setEditForm(toEditForm(item));
+  };
+
+  const submitEditForm = async () => {
+    if (!editTarget || !editForm) return;
+    try {
+      await inventoryService.updateInventoryItem(editTarget._id, {
+        name: editForm.name.trim(),
+        unit: editForm.unit.trim(),
+        minStockThreshold: Number(editForm.minStockThreshold) || 0,
+        costPrice: Number(editForm.costPrice) || 0,
+        supplier: editForm.supplier || undefined,
+        active: editForm.active,
+      });
+
+      // Quantity isn't part of the PUT above (the backend rejects it there)
+      // — a changed value is instead recorded as an ADJUSTMENT transaction,
+      // same as "Adjust Stock", so it still leaves an audit trail.
+      const newQuantity = Number(editForm.quantity);
+      const quantityChange = Math.round((newQuantity - editTarget.quantity) * 100) / 100;
+      if (Number.isFinite(quantityChange) && quantityChange !== 0) {
+        await inventoryService.createTransaction(editTarget._id, {
+          type: 'ADJUSTMENT',
+          quantityChange,
+          reason: 'Manual quantity edit (Edit Item)',
+        });
+      }
+
+      toast.show('Inventory item updated', 'success');
+      setEditTarget(null);
+      setEditForm(null);
+      load();
+    } catch (err) {
+      toast.show(err instanceof ApiError ? err.message : 'Failed to update item', 'error');
     }
   };
 
@@ -225,6 +294,9 @@ export function InventoryPage() {
                       </td>
                       <td>
                         <div className="row-actions">
+                          <button className="btn btn-sm" onClick={() => openEdit(item)}>
+                            Edit
+                          </button>
                           <button className="btn btn-sm" onClick={() => openTxn(item)}>
                             Adjust Stock
                           </button>
@@ -341,6 +413,120 @@ export function InventoryPage() {
                 className="btn btn-primary"
                 onClick={submitItemForm}
                 disabled={!itemForm.name.trim() || !itemForm.unit.trim()}
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editTarget && editForm && (
+        <div
+          className="modal-overlay"
+          onClick={() => {
+            setEditTarget(null);
+            setEditForm(null);
+          }}
+        >
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h2>Edit Inventory Item — {editTarget.name}</h2>
+            <div className="form-row">
+              <div className="field">
+                <label>Name</label>
+                <input
+                  className="input"
+                  value={editForm.name}
+                  onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                />
+              </div>
+              <div className="field">
+                <label>Unit</label>
+                <input
+                  className="input"
+                  placeholder="kg, pcs, ltr..."
+                  value={editForm.unit}
+                  onChange={(e) => setEditForm({ ...editForm, unit: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="form-row">
+              <div className="field">
+                <label>Quantity</label>
+                <input
+                  className="input"
+                  type="number"
+                  value={editForm.quantity}
+                  onChange={(e) => setEditForm({ ...editForm, quantity: e.target.value })}
+                />
+              </div>
+              <div className="field">
+                <label>Min Stock Threshold</label>
+                <input
+                  className="input"
+                  type="number"
+                  value={editForm.minStockThreshold}
+                  onChange={(e) => setEditForm({ ...editForm, minStockThreshold: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="form-row">
+              <div className="field">
+                <label>Cost Price</label>
+                <input
+                  className="input"
+                  type="number"
+                  value={editForm.costPrice}
+                  onChange={(e) => setEditForm({ ...editForm, costPrice: e.target.value })}
+                />
+              </div>
+              <div className="field">
+                <label>Supplier (optional)</label>
+                <select
+                  className="input"
+                  value={editForm.supplier}
+                  onChange={(e) => setEditForm({ ...editForm, supplier: e.target.value })}
+                >
+                  <option value="">None</option>
+                  {suppliers.map((s) => (
+                    <option key={s._id} value={s._id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="form-row">
+              <div className="field">
+                <label>Status</label>
+                <select
+                  className="input"
+                  value={editForm.active ? 'active' : 'inactive'}
+                  onChange={(e) => setEditForm({ ...editForm, active: e.target.value === 'active' })}
+                >
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+              </div>
+            </div>
+            <p style={{ fontSize: 13, color: 'var(--color-muted)' }}>
+              Changing quantity is recorded as an ADJUSTMENT transaction (visible in "History"), same as using "Adjust
+              Stock".
+            </p>
+            <div className="modal-actions">
+              <button
+                className="btn"
+                onClick={() => {
+                  setEditTarget(null);
+                  setEditForm(null);
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={submitEditForm}
+                disabled={!editForm.name.trim() || !editForm.unit.trim()}
               >
                 Save
               </button>

@@ -1,6 +1,6 @@
 // The set of date-range shortcuts the Reports page and dashboard can
 // request instead of specifying exact dates.
-export type DatePreset = 'today' | 'yesterday' | 'last7days' | 'week' | 'month' | 'custom';
+export type DatePreset = 'today' | 'yesterday' | 'last7days' | 'week' | 'month' | 'year' | 'custom';
 
 export interface DateRange {
   start: Date;
@@ -32,6 +32,12 @@ function startOfMonth(date: Date): Date {
   return d;
 }
 
+function startOfYear(date: Date): Date {
+  const d = startOfDay(date);
+  d.setMonth(0, 1);
+  return d;
+}
+
 // Converts a named preset (plus the current time and, for "custom", the
 // client-supplied from/to) into a concrete {start, end} Date range that the
 // reports service's MongoDB queries can filter `createdAt` against.
@@ -59,6 +65,8 @@ export function resolveDateRange(
       return { start: startOfWeek(now), end: endOfDay(now) };
     case 'month':
       return { start: startOfMonth(now), end: endOfDay(now) };
+    case 'year':
+      return { start: startOfYear(now), end: endOfDay(now) };
     case 'custom': {
       if (!custom?.from || !custom?.to) {
         throw new Error('Custom date range requires "from" and "to"');

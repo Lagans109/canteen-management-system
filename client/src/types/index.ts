@@ -130,6 +130,23 @@ export interface DailySales {
   numberOfSales: number;
 }
 
+export interface ItemProfitability {
+  name: string;
+  quantity: number;
+  revenue: number;
+  // null when the item has no linked InventoryItem cost price recorded.
+  cost: number | null;
+  profit: number | null;
+}
+
+export interface ProfitSummary {
+  totalRevenue: number;
+  totalCost: number;
+  totalProfit: number;
+  marginPercent: number;
+  itemsWithoutCost: number;
+}
+
 // Named date-range shortcuts accepted by the Reports endpoints (see
 // server/src/modules/reports/dateRange.ts for how these resolve to actual dates).
-export type DatePreset = 'today' | 'yesterday' | 'last7days' | 'week' | 'month' | 'custom';
+export type DatePreset = 'today' | 'yesterday' | 'last7days' | 'week' | 'month' | 'year' | 'custom';

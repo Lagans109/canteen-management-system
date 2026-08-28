@@ -3,7 +3,7 @@ import { useAuth } from '../../hooks/useAuth';
 import * as reportService from '../../services/reportService';
 import * as saleService from '../../services/saleService';
 import * as inventoryService from '../../services/inventoryService';
-import type { DailySales, InventoryItem, ItemSales, Sale, SalesSummary } from '../../types';
+import type { DailySales, InventoryItem, ItemSales, ProfitSummary, Sale, SalesSummary } from '../../types';
 import { LoadingState, ErrorState, EmptyState } from '../../components/StateViews';
 import { MiniBarChart } from '../../components/MiniBarChart';
 import { IconAlert, IconReceipt, IconSales, IconTrend } from '../../components/Icons';
@@ -13,24 +13,23 @@ import { IconAlert, IconReceipt, IconSales, IconTrend } from '../../components/I
 // "not loaded yet" (null) apart from "loaded" in a single check.
 interface OwnerData {
   summary: SalesSummary;
+  profit: ProfitSummary;
   topItems: ItemSales[];
   lowStock: InventoryItem[];
   trend: DailySales[];
 }
 
-// The landing page after login for both OWNER and CASHIER — shows recent
-// sales to everyone, plus extra summary/reports widgets for OWNER only.
+// The landing page after login for both OWNER and CASHIER — both see the
+// exact same dashboard (recent sales, today's summary/profit, top items,
+// low stock, and the 7-day trend); there's no role-based restriction here.
 export function DashboardPage() {
   const { user } = useAuth();
   const [recentSales, setRecentSales] = useState<Sale[] | null>(null);
   const [ownerData, setOwnerData] = useState<OwnerData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Runs on mount and whenever the user's role changes (e.g. right after
-  // login resolves). Always fetches the 5 most recent sales; only fetches
-  // the owner-only report/inventory data if the current user is OWNER —
-  // this avoids CASHIER accounts triggering requests to OWNER-only
-  // endpoints that would just fail with a 403.
+  // Runs once on mount: fetches the 5 most recent sales plus today's
+  // summary/profit/top-items/low-stock/trend data, all in one pass.
   useEffect(() => {
     const load = async () => {
       try {
@@ -39,26 +38,26 @@ export function DashboardPage() {
         const salesRes = await saleService.listSales({ limit: 5 });
         setRecentSales(salesRes.sales);
 
-        if (user?.role === 'OWNER') {
-          const [salesReport, topItemsReport, lowStock, trendReport] = await Promise.all([
-            reportService.getSalesReport({ preset: 'today' }),
-            reportService.getTopItemsReport({ preset: 'today', limit: 5 }),
-            inventoryService.listLowStockItems(),
-            reportService.getDailySalesReport({ preset: 'last7days' }),
-          ]);
-          setOwnerData({
-            summary: salesReport.summary,
-            topItems: topItemsReport.items,
-            lowStock: lowStock.items,
-            trend: trendReport.days,
-          });
-        }
+        const [salesReport, profitReport, topItemsReport, lowStock, trendReport] = await Promise.all([
+          reportService.getSalesReport({ preset: 'today' }),
+          reportService.getProfitReport({ preset: 'today' }),
+          reportService.getTopItemsReport({ preset: 'today', limit: 5 }),
+          inventoryService.listLowStockItems(),
+          reportService.getDailySalesReport({ preset: 'last7days' }),
+        ]);
+        setOwnerData({
+          summary: salesReport.summary,
+          profit: profitReport.summary,
+          topItems: topItemsReport.items,
+          lowStock: lowStock.items,
+          trend: trendReport.days,
+        });
       } catch {
         setError('Unable to load dashboard data.');
       }
     };
     load();
-  }, [user?.role]);
+  }, []);
 
   if (error) return <ErrorState label={error} />;
   if (!recentSales) return <LoadingState label="Loading dashboard..." />;
@@ -97,6 +96,15 @@ export function DashboardPage() {
               <div>
                 <div className="value">{ownerData.summary.totalItemsSold}</div>
                 <div className="label">Items Sold</div>
+              </div>
+              <span className="icon-wrap">
+                <IconTrend />
+              </span>
+            </div>
+            <div className={`stat-tile ${ownerData.profit.totalProfit < 0 ? 'danger' : 'accent'}`}>
+              <div>
+                <div className="value">₹{ownerData.profit.totalProfit.toFixed(2)}</div>
+                <div className="label">Today's Profit</div>
               </div>
               <span className="icon-wrap">
                 <IconTrend />
