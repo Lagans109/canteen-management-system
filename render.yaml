@@ -2,6 +2,7 @@ services:
   - type: web
     name: canteen-backend
     runtime: docker
+    plan : free
     dockerfilePath: ./server/Dockerfile
     dockerContext: .
     healthCheckPath: /api/health
